@@ -33,13 +33,13 @@ export async function ensureModelReady(
     // Set up progress tracking
     let unsubscribe: (() => void) | undefined;
     if (onProgress) {
-      const handler = (evt: any) => {
+      const handler = (evt: { modelId: string; progress: number }) => {
         if (evt.modelId === MODEL_ID) {
           onProgress(evt.progress ?? 0);
         }
       };
-      EventBus.shared.on('model.downloadProgress', handler);
-      unsubscribe = () => EventBus.shared.off('model.downloadProgress', handler);
+      // .on() returns an unsubscribe function — there is no .off()
+      unsubscribe = EventBus.shared.on('model.downloadProgress', handler);
     }
 
     try {
