@@ -1,7 +1,9 @@
-/* This component polls the session report and visualizes recent load history plus band transitions so the learner can inspect how the adaptive system responded over time. */
+/* This component reads recent load history and band transitions from the local session store. */
 
 import { useEffect, useState } from 'react';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+
+import { sessionStore, type SessionReport } from '../engine/sessionStore';
 
 type ReportPoint = {
   timestamp: string;
@@ -11,9 +13,9 @@ type ReportPoint = {
 
 type BandChange = {
   timestamp: string;
-  from_band: string | null;
-  to_band: string;
-  trigger_score: number;
+  fromBand: string | null;
+  toBand: string;
+  triggerScore: number;
   reason: string;
 };
 
@@ -24,20 +26,20 @@ export function AdaptationLog({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     let mounted = true;
 
-    const fetchReport = async () => {
+    const fetchReport = () => {
       try {
-        const response = await fetch(`/session/report?session_id=${sessionId}`);
-        if (!response.ok) {
-          return;
-        }
-        const report = await response.json();
-        if (!mounted) {
-          return;
-        }
-        setLoadSeries(report.load_series ?? []);
-        setChanges(report.band_changes ?? []);
+        const report = sessionStore.buildSessionReport(sessionId);
+        if (!mounted) return;
+        setLoadSeries(
+          report.loadSeries.map((e) => ({
+            timestamp: e.timestamp,
+            score: e.compositeScore,
+            band: e.band,
+          }))
+        );
+        setChanges(report.bandChanges);
       } catch {
-        // Silent retries are enough for a passive log panel.
+        // Silent — passive log panel
       }
     };
 
@@ -75,12 +77,14 @@ export function AdaptationLog({ sessionId }: { sessionId: string }) {
             .slice()
             .reverse()
             .map((change) => (
-              <div key={`${change.timestamp}-${change.to_band}`} className="rounded-2xl bg-white/70 p-4">
+              <div key={`${change.timestamp}-${change.toBand}`} className="rounded-2xl bg-white/70 p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-semibold text-slate-800">
-                    {change.from_band ?? 'START'} to {change.to_band}
+                    {change.fromBand ?? 'START'} → {change.toBand}
                   </span>
-                  <span className="text-xs uppercase tracking-[0.18em] text-slate-500">{Math.round(change.trigger_score)}</span>
+                  <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    {Math.round(change.triggerScore)}
+                  </span>
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{change.reason}</p>
               </div>

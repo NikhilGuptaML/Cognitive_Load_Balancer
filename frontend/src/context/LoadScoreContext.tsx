@@ -1,41 +1,39 @@
-/* This context owns the live load-score subscription so components can read the current score, band, and active signals without each creating their own WebSocket connection. */
+/* This context owns the live load-score state using the local loadAggregator instead of a WebSocket connection. */
 
-import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
-import { useWebSocket } from '../hooks/useWebSocket';
-
-type LoadPayload = {
-  score: number;
-  band: string;
-  signalsActive: string[];
-  updatedAt?: string;
-};
+import { loadAggregator, type LoadSnapshot } from '../engine/loadAggregator';
+import { sessionStore } from '../engine/sessionStore';
 
 type LoadScoreContextValue = {
   score: number;
   band: string;
   signalsActive: string[];
   updatedAt?: string;
-  socketStatus: string;
 };
 
 const LoadScoreContext = createContext<LoadScoreContextValue | undefined>(undefined);
 
 export function LoadScoreProvider({ children, sessionId }: PropsWithChildren<{ sessionId: string }>) {
-  const [state, setState] = useState<LoadPayload>({ score: 0, band: 'FLOW', signalsActive: [] });
-  const websocketUrl = useMemo(() => {
-    // FIXED: Build websocket URL from runtime host/protocol so non-localhost demos work.
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const backendHost = `${window.location.hostname}:8000`;
-    return `${protocol}://${backendHost}/ws/load/${sessionId}`;
+  const [state, setState] = useState<LoadSnapshot>(loadAggregator.getState());
+
+  useEffect(() => {
+    const unsubscribe = loadAggregator.subscribe((snapshot) => {
+      setState(snapshot);
+
+      // Persist load event to session store
+      sessionStore.recordLoadEvent(sessionId, {
+        keystrokeScore: snapshot.subscores.keystroke,
+        faceScore: snapshot.subscores.facial,
+        latencyScore: snapshot.subscores.latency,
+        compositeScore: snapshot.score,
+        band: snapshot.band,
+        signalsActive: snapshot.signalsActive,
+      });
+    });
+
+    return unsubscribe;
   }, [sessionId]);
-
-  const { status, lastMessage } = useWebSocket<LoadPayload>(websocketUrl, {
-    enabled: Boolean(sessionId),
-    onMessage: (payload) => setState(payload)
-  });
-
-  // FIXED: Removed redundant useEffect on lastMessage — onMessage callback handles updates.
 
   const value = useMemo(
     () => ({
@@ -43,9 +41,8 @@ export function LoadScoreProvider({ children, sessionId }: PropsWithChildren<{ s
       band: state.band ?? 'FLOW',
       signalsActive: state.signalsActive ?? [],
       updatedAt: state.updatedAt,
-      socketStatus: status
     }),
-    [state, status]
+    [state]
   );
 
   return <LoadScoreContext.Provider value={value}>{children}</LoadScoreContext.Provider>;

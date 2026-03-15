@@ -1,6 +1,8 @@
-/* This hook watches typing behavior in a rolling five-second window, converts the signal into a normalized cognitive-load subscore, and posts it back to the backend at a fixed cadence during the active session. */
+/* This hook watches typing behavior in a rolling five-second window, converts the signal into a normalized cognitive-load subscore, and updates the local loadAggregator. */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+
+import { loadAggregator } from '../engine/loadAggregator';
 
 type KeyEventPoint = {
   timestamp: number;
@@ -34,7 +36,7 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
     ikiVariance: 0,
     wpm: 0,
     backspaceRate: 0,
-    rawScore: 0
+    rawScore: 0,
   });
 
   useEffect(() => {
@@ -67,7 +69,7 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
         ikiVariance: Number(ikiVariance.toFixed(2)),
         wpm: Number(wpm.toFixed(2)),
         backspaceRate: Number(backspaceRate.toFixed(3)),
-        rawScore: Number(rawScore.toFixed(2))
+        rawScore: Number(rawScore.toFixed(2)),
       });
     };
 
@@ -75,34 +77,21 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [enabled]);
 
-  // FIXED: Use a ref so the POST interval reads current metrics without restarting on every keystroke.
+  // Use a ref so the update interval reads current metrics without restarting on every keystroke.
   const metricsRef = useRef(metrics);
   useEffect(() => {
     metricsRef.current = metrics;
   }, [metrics]);
 
+  // Update the local load aggregator periodically instead of POSTing to backend.
   useEffect(() => {
     if (!enabled || !sessionId) {
       return undefined;
     }
 
-    const interval = window.setInterval(async () => {
+    const interval = window.setInterval(() => {
       const current = metricsRef.current;
-      try {
-        await fetch('/signal/keystroke', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            session_id: sessionId,
-            ikiVariance: current.ikiVariance,
-            wpm: current.wpm,
-            backspaceRate: current.backspaceRate,
-            rawScore: current.rawScore
-          })
-        });
-      } catch {
-        // Silent failure keeps the typing UI responsive when the backend is restarting.
-      }
+      loadAggregator.updateSignal('keystroke', current.rawScore);
     }, 5000);
 
     return () => window.clearInterval(interval);

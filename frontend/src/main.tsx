@@ -1,4 +1,4 @@
-/* This file mounts the React application so routing, shared context, and the adaptive session UI all start from a single browser entry point. */
+/* This file mounts the React application with RunAnywhere SDK initialization. */
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';

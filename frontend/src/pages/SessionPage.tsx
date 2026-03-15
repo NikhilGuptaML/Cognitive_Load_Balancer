@@ -1,4 +1,4 @@
-/* This page composes the live load context, passive keystroke analysis, and adaptive quiz components into the main study experience. */
+/* This page composes the live load context, passive keystroke analysis, and adaptive quiz components into the main study experience — all running locally in the browser. */
 
 import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -17,7 +17,6 @@ export function SessionPage() {
   const stored = window.localStorage.getItem('clb.activeSession');
   let parsed: { pomodoroLength?: number } | null = null;
   try {
-    // FIXED: Prevent runtime crash when stored session payload is malformed.
     parsed = stored ? (JSON.parse(stored) as { pomodoroLength?: number }) : null;
   } catch {
     parsed = null;
@@ -44,7 +43,7 @@ export function SessionPage() {
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.26em] text-slate-500">Active Session</p>
-              <h1 className="headline mt-2 text-4xl text-slate-900">Local Adaptive Study Loop</h1>
+              <h1 className="headline mt-2 text-4xl text-slate-900">On-Device Adaptive Study</h1>
             </div>
             <button
               type="button"
