@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from core.document_processor import retrieve_context
 from core.load_aggregator import load_aggregator
@@ -66,10 +67,12 @@ async def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
     latency_metrics = latency_tracker.record_latency(payload.session_id, payload.latency_ms)
     await load_aggregator.update_signal(payload.session_id, "latency", latency_metrics["raw_score"])
 
-    context_chunks = retrieve_context(_document_collection_name(document), question.text, k=3)
+    # FIXED: Offload blocking retrieval work to avoid stalling the async event loop.
+    context_chunks = await run_in_threadpool(retrieve_context, _document_collection_name(document), question.text, 3)
     prompt = render_answer_evaluation_prompt(question.text, payload.answer_text, context_chunks)
     try:
-        result = ollama_client.generate_json(model="phi3:mini", prompt=prompt)
+        # FIXED: Run blocking local LLM call in a threadpool from async route context.
+        result = await run_in_threadpool(ollama_client.generate_json, "phi3:mini", prompt)
         correct = bool(result.get("correct", False))
         score = max(0.0, min(100.0, float(result.get("score", 0.0))))
         explanation = str(result.get("explanation", "")).strip() or "No explanation provided."

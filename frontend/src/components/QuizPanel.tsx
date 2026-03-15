@@ -41,6 +41,7 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
   const [answer, setAnswer] = useState('');
   const [showHint, setShowHint] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const appearedAtRef = useRef<number>(Date.now());
 
@@ -55,13 +56,18 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
       setQuestion(payload);
       setAnswer('');
       setShowHint(false);
+      setError(null);
       appearedAtRef.current = Date.now();
+    } catch {
+      // FIXED: Expose fetch failures so quiz panel never fails silently.
+      setError('Unable to load the next question. Check backend connectivity and try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
+    // FIXED: Keep async call contained to avoid unhandled promise rejections.
     void fetchQuestion();
   }, [sessionId]);
 
@@ -74,7 +80,8 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
       void fetchQuestion();
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [feedback]);
+  // FIXED: Include sessionId in deps to avoid a stale closure when fetching the next question.
+  }, [feedback, sessionId]);
 
   const badgeClass = useMemo(() => BAND_BADGES[question?.band ?? 'OPTIMAL'] ?? BAND_BADGES.OPTIMAL, [question?.band]);
 
@@ -102,6 +109,10 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
 
       const payload = await response.json();
       setFeedback(payload);
+      setError(null);
+    } catch {
+      // FIXED: Provide actionable feedback when answer submission fails.
+      setError('Answer submission failed. Your response was not graded. Please retry.');
     } finally {
       setIsLoading(false);
     }
@@ -121,6 +132,7 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
         <p className="min-h-24 text-lg leading-8 text-slate-800">
           {isLoading && !question ? 'Generating a local question...' : question?.question_text ?? 'No question loaded yet.'}
         </p>
+        {error ? <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p> : null}
         {question?.hint ? (
           <div className="mt-4">
             <button
@@ -143,6 +155,14 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
         className="mt-3 min-h-40 w-full rounded-[1.75rem] border border-white/50 bg-white/85 p-5 text-base leading-7 text-slate-900 outline-none transition focus:border-amber-400"
       />
       <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => void fetchQuestion()}
+          disabled={isLoading}
+          className="mr-3 rounded-full border border-slate-300 bg-white/70 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Refresh Question
+        </button>
         <button
           type="button"
           onClick={() => void submitAnswer()}

@@ -75,22 +75,29 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [enabled]);
 
+  // FIXED: Use a ref so the POST interval reads current metrics without restarting on every keystroke.
+  const metricsRef = useRef(metrics);
+  useEffect(() => {
+    metricsRef.current = metrics;
+  }, [metrics]);
+
   useEffect(() => {
     if (!enabled || !sessionId) {
       return undefined;
     }
 
     const interval = window.setInterval(async () => {
+      const current = metricsRef.current;
       try {
         await fetch('/signal/keystroke', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             session_id: sessionId,
-            ikiVariance: metrics.ikiVariance,
-            wpm: metrics.wpm,
-            backspaceRate: metrics.backspaceRate,
-            rawScore: metrics.rawScore
+            ikiVariance: current.ikiVariance,
+            wpm: current.wpm,
+            backspaceRate: current.backspaceRate,
+            rawScore: current.rawScore
           })
         });
       } catch {
@@ -99,7 +106,7 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [enabled, metrics, sessionId]);
+  }, [enabled, sessionId]);
 
   return useMemo(() => ({ metrics }), [metrics]);
 }

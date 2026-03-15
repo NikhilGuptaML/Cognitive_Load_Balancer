@@ -1,6 +1,6 @@
 /* This context owns the live load-score subscription so components can read the current score, band, and active signals without each creating their own WebSocket connection. */
 
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
 
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -23,18 +23,19 @@ const LoadScoreContext = createContext<LoadScoreContextValue | undefined>(undefi
 
 export function LoadScoreProvider({ children, sessionId }: PropsWithChildren<{ sessionId: string }>) {
   const [state, setState] = useState<LoadPayload>({ score: 0, band: 'FLOW', signalsActive: [] });
-  const websocketUrl = useMemo(() => `ws://localhost:8000/ws/load/${sessionId}`, [sessionId]);
+  const websocketUrl = useMemo(() => {
+    // FIXED: Build websocket URL from runtime host/protocol so non-localhost demos work.
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const backendHost = `${window.location.hostname}:8000`;
+    return `${protocol}://${backendHost}/ws/load/${sessionId}`;
+  }, [sessionId]);
 
   const { status, lastMessage } = useWebSocket<LoadPayload>(websocketUrl, {
     enabled: Boolean(sessionId),
     onMessage: (payload) => setState(payload)
   });
 
-  useEffect(() => {
-    if (lastMessage) {
-      setState(lastMessage);
-    }
-  }, [lastMessage]);
+  // FIXED: Removed redundant useEffect on lastMessage — onMessage callback handles updates.
 
   const value = useMemo(
     () => ({

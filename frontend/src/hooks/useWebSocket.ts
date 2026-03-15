@@ -11,12 +11,17 @@ interface UseWebSocketOptions<T> {
 
 export function useWebSocket<T>(url: string | null, options: UseWebSocketOptions<T> = {}) {
   const { enabled = true, onMessage } = options;
+  const onMessageRef = useRef<typeof onMessage>(onMessage);
   const reconnectDelayRef = useRef(1000);
   const timeoutRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
 
   const [status, setStatus] = useState<SocketStatus>('idle');
   const [lastMessage, setLastMessage] = useState<T | null>(null);
+
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  }, [onMessage]);
 
   useEffect(() => {
     if (!enabled || !url) {
@@ -43,7 +48,7 @@ export function useWebSocket<T>(url: string | null, options: UseWebSocketOptions
         try {
           const payload = JSON.parse(event.data) as T;
           setLastMessage(payload);
-          onMessage?.(payload);
+          onMessageRef.current?.(payload);
         } catch {
           setStatus('error');
         }
@@ -73,7 +78,7 @@ export function useWebSocket<T>(url: string | null, options: UseWebSocketOptions
       }
       socketRef.current?.close();
     };
-  }, [enabled, onMessage, url]);
+  }, [enabled, url]);
 
   return { status, lastMessage };
 }

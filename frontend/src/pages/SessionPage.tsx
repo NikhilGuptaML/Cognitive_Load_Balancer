@@ -15,7 +15,13 @@ export function SessionPage() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
   const stored = window.localStorage.getItem('clb.activeSession');
-  const parsed = stored ? (JSON.parse(stored) as { pomodoroLength?: number }) : null;
+  let parsed: { pomodoroLength?: number } | null = null;
+  try {
+    // FIXED: Prevent runtime crash when stored session payload is malformed.
+    parsed = stored ? (JSON.parse(stored) as { pomodoroLength?: number }) : null;
+  } catch {
+    parsed = null;
+  }
   const durationMinutes = parsed?.pomodoroLength ?? 25;
 
   const safeSessionId = useMemo(() => sessionId ?? '', [sessionId]);

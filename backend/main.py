@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -17,11 +18,18 @@ from core.load_aggregator import load_aggregator
 from db.database import Base, engine
 
 
+# FIXED: Support configurable frontend origins while keeping sensible local defaults.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if origin.strip()
+]
+
 app = FastAPI(title="Cognitive Load Balancer", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,4 +65,8 @@ async def load_socket(websocket: WebSocket, session_id: str) -> None:
         await load_aggregator.unregister(session_id, websocket)
     except Exception:
         await load_aggregator.unregister(session_id, websocket)
-        await websocket.close()
+        # FIXED: Guard against close() failing on an already-broken socket.
+        try:
+            await websocket.close()
+        except Exception:
+            pass

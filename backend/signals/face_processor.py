@@ -91,12 +91,12 @@ class FaceProcessor:
         self.ear_history.append(ear)
 
         blink_rate = compute_blink_rate(list(self.ear_history), fps=10)
-        brow_score = brow_furrow_score(landmarks, list(self.brow_history) if self.brow_history else [0.12])
+        # FIXED: Pass the live deque so brow_furrow_score appends in-place (was passing a copy before).
+        brow_score = brow_furrow_score(landmarks, self.brow_history)
         brow_distance = hypot(
             landmarks[BROW_LEFT].x - landmarks[BROW_RIGHT].x,
             landmarks[BROW_LEFT].y - landmarks[BROW_RIGHT].y,
         )
-        self.brow_history.append(float(brow_distance))
 
         # Blink rate beyond a typical relaxed range and stronger brow furrowing both raise the load score.
         blink_component = min(60.0, max(0.0, abs(blink_rate - 18.0) * 2.5))

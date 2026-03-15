@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from core.document_processor import index_document
 from db.database import get_db
@@ -35,7 +36,8 @@ async def upload_document(
     destination.write_bytes(content)
 
     try:
-        index = index_document(destination, namespace or doc_id)
+        # FIXED: Run CPU/IO-heavy indexing off the async event loop.
+        index = await run_in_threadpool(index_document, destination, namespace or doc_id)
     except ValueError as exc:
         destination.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

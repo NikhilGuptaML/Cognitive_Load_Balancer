@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from core.difficulty_controller import build_question_prompt, get_band
 from core.document_processor import retrieve_context
@@ -37,7 +38,7 @@ def _fallback_question(context_chunks: list[str], band: str) -> dict[str, str]:
 
 
 @router.get("")
-def get_question(session_id: str = Query(...), topic: str = Query(default=""), db: Session = Depends(get_db)):
+async def get_question(session_id: str = Query(...), topic: str = Query(default=""), db: Session = Depends(get_db)):
     session = db.get(StudySession, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found.")
@@ -54,13 +55,15 @@ def get_question(session_id: str = Query(...), topic: str = Query(default=""), d
     history_payload = [{"question": item.text, "band": item.band, "hint": item.hint} for item in question_history]
 
     try:
-        context_chunks = retrieve_context(_document_collection_name(document), topic or document.filename, k=3)
+        # FIXED: Offload blocking ChromaDB retrieval to avoid stalling the async event loop.
+        context_chunks = await run_in_threadpool(retrieve_context, _document_collection_name(document), topic or document.filename, 3)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     prompt = build_question_prompt(band=band, context_chunks=context_chunks, history=history_payload)
     try:
-        llm_response = ollama_client.generate_json(model="phi3:mini", prompt=prompt)
+        # FIXED: Run blocking local LLM call in a threadpool from async route context.
+        llm_response = await run_in_threadpool(ollama_client.generate_json, "phi3:mini", prompt)
         question_text = str(llm_response.get("question_text", "")).strip()
         hint = str(llm_response.get("hint", "")).strip() or None
         if not question_text:
