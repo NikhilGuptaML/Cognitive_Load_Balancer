@@ -1,0 +1,158 @@
+/* This component runs the question-answer loop: fetch a question, collect the learner's response, submit it with latency, show short feedback, and then automatically request the next question. */
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+
+type QuestionResponse = {
+  question_id: string;
+  question_text: string;
+  band: string;
+  hint?: string | null;
+};
+
+type FeedbackState = {
+  correct: boolean;
+  score: number;
+  explanation: string;
+} | null;
+
+const BAND_BADGES: Record<string, string> = {
+  FLOW: 'bg-emerald-100 text-emerald-900',
+  OPTIMAL: 'bg-blue-100 text-blue-900',
+  ELEVATED: 'bg-amber-100 text-amber-900',
+  OVERLOADED: 'bg-orange-100 text-orange-900',
+  CRISIS: 'bg-rose-100 text-rose-900'
+};
+
+function FeedbackModal({ feedback }: { feedback: NonNullable<FeedbackState> }) {
+  return (
+    <div className="absolute inset-0 rounded-[2rem] bg-slate-950/55 p-5 text-white backdrop-blur-sm">
+      <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center rounded-[1.75rem] bg-slate-900/90 p-6 text-center">
+        <p className="text-sm uppercase tracking-[0.24em] text-slate-300">Feedback</p>
+        <h4 className="mt-3 text-3xl font-semibold">{feedback.correct ? 'Correct' : feedback.score >= 50 ? 'Partial' : 'Incorrect'}</h4>
+        <p className="mt-2 text-lg text-slate-200">Score: {Math.round(feedback.score)}</p>
+        <p className="mt-4 text-sm leading-6 text-slate-300">{feedback.explanation}</p>
+      </div>
+    </div>
+  );
+}
+
+export function QuizPanel({ sessionId }: { sessionId: string }) {
+  const [question, setQuestion] = useState<QuestionResponse | null>(null);
+  const [answer, setAnswer] = useState('');
+  const [showHint, setShowHint] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const appearedAtRef = useRef<number>(Date.now());
+
+  const fetchQuestion = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/question?session_id=${sessionId}`);
+      if (!response.ok) {
+        throw new Error('Question request failed');
+      }
+      const payload = (await response.json()) as QuestionResponse;
+      setQuestion(payload);
+      setAnswer('');
+      setShowHint(false);
+      appearedAtRef.current = Date.now();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchQuestion();
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!feedback) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setFeedback(null);
+      void fetchQuestion();
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [feedback]);
+
+  const badgeClass = useMemo(() => BAND_BADGES[question?.band ?? 'OPTIMAL'] ?? BAND_BADGES.OPTIMAL, [question?.band]);
+
+  const submitAnswer = async () => {
+    if (!question || !answer.trim()) {
+      return;
+    }
+    const latencyMs = Date.now() - appearedAtRef.current;
+    setIsLoading(true);
+    try {
+      const response = await fetch('/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: sessionId,
+          question_id: question.question_id,
+          answer_text: answer,
+          latency_ms: latencyMs
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Answer submission failed');
+      }
+
+      const payload = await response.json();
+      setFeedback(payload);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="glass-panel relative rounded-[2rem] p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Adaptive Quiz</p>
+          <h3 className="mt-2 text-2xl font-semibold text-slate-900">Current Prompt</h3>
+        </div>
+        {question ? <span className={`rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`}>{question.band}</span> : null}
+      </div>
+
+      <div className="mt-6 rounded-[1.75rem] bg-white/70 p-5">
+        <p className="min-h-24 text-lg leading-8 text-slate-800">
+          {isLoading && !question ? 'Generating a local question...' : question?.question_text ?? 'No question loaded yet.'}
+        </p>
+        {question?.hint ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setShowHint((current) => !current)}
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              {showHint ? 'Hide Hint' : 'Show Hint'}
+            </button>
+            {showHint ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">{question.hint}</p> : null}
+          </div>
+        ) : null}
+      </div>
+
+      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer</label>
+      <textarea
+        value={answer}
+        onChange={(event) => setAnswer(event.target.value)}
+        placeholder="Type your answer here. Typing rhythm is part of the local load estimate."
+        className="mt-3 min-h-40 w-full rounded-[1.75rem] border border-white/50 bg-white/85 p-5 text-base leading-7 text-slate-900 outline-none transition focus:border-amber-400"
+      />
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => void submitAnswer()}
+          disabled={isLoading || !question || !answer.trim()}
+          className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+        >
+          {isLoading ? 'Submitting...' : 'Submit Answer'}
+        </button>
+      </div>
+      {feedback ? <FeedbackModal feedback={feedback} /> : null}
+    </div>
+  );
+}
