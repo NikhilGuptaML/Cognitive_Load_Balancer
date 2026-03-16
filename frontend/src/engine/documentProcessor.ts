@@ -2,6 +2,9 @@
  * Document Processor — ported from backend/core/document_processor.py
  * PDF extraction (via pdf.js), text chunking, and TF-IDF keyword-based context retrieval.
  * Replaces PyMuPDF + ChromaDB + sentence-transformers with pure browser logic.
+ *
+ * The index is persisted in sessionStorage so it survives React Router navigation
+ * within the same browser tab. (A full page reload will re-require re-upload.)
  */
 
 import * as pdfjsLib from 'pdfjs-dist';
@@ -20,7 +23,48 @@ export interface DocumentIndex {
   chunkTermFreqs: Map<string, number>[];
 }
 
-/* ---- PDF extraction ---- */
+// ─── Storage helpers ─────────────────────────────────────────────────────────
+
+const SS_PREFIX = 'clb.docIndex.';
+
+/** Persist index chunks to sessionStorage (Maps are serialised as plain objects). */
+function saveIndexToStorage(index: DocumentIndex): void {
+  try {
+    const serialised = {
+      id: index.id,
+      filename: index.filename,
+      chunks: index.chunks,
+      chunkTermFreqs: index.chunkTermFreqs.map((m) => Object.fromEntries(m)),
+    };
+    sessionStorage.setItem(SS_PREFIX + index.id, JSON.stringify(serialised));
+  } catch {
+    // sessionStorage quota exceeded — degrade gracefully
+  }
+}
+
+/** Load index from sessionStorage, rebuilding Maps from plain objects. */
+function loadIndexFromStorage(id: string): DocumentIndex | null {
+  try {
+    const raw = sessionStorage.getItem(SS_PREFIX + id);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as {
+      id: string;
+      filename: string;
+      chunks: string[];
+      chunkTermFreqs: Record<string, number>[];
+    };
+    return {
+      id: data.id,
+      filename: data.filename,
+      chunks: data.chunks,
+      chunkTermFreqs: data.chunkTermFreqs.map((obj) => new Map(Object.entries(obj))),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── PDF extraction ───────────────────────────────────────────────────────────
 
 async function extractTextFromPdf(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
@@ -39,7 +83,7 @@ async function extractTextFromPdf(file: File): Promise<string> {
   return pages.join('\n');
 }
 
-/* ---- Text chunking ---- */
+// ─── Text chunking ────────────────────────────────────────────────────────────
 
 function chunkText(text: string, chunkSize = 512, overlap = 50): string[] {
   const words = text.split(/\s+/).filter(Boolean);
@@ -59,7 +103,7 @@ function chunkText(text: string, chunkSize = 512, overlap = 50): string[] {
   return chunks;
 }
 
-/* ---- TF-IDF retrieval helpers ---- */
+// ─── TF-IDF retrieval helpers ─────────────────────────────────────────────────
 
 function tokenize(text: string): string[] {
   return text
@@ -99,13 +143,14 @@ function cosineSimilarity(
   return dotProduct / (Math.sqrt(queryMag) * Math.sqrt(chunkMag));
 }
 
-/* ---- Public API ---- */
+// ─── Public API ───────────────────────────────────────────────────────────────
 
+/** In-memory cache. Acts as a fast read-through layer over sessionStorage. */
 const indexStore = new Map<string, DocumentIndex>();
 
 export async function indexDocument(
   file: File,
-  sessionId: string
+  docId: string
 ): Promise<DocumentIndex> {
   const sourceText = (await extractTextFromPdf(file)).trim();
   if (!sourceText) {
@@ -120,24 +165,33 @@ export async function indexDocument(
   const chunkTermFreqs = chunks.map((chunk) => buildTermFrequency(tokenize(chunk)));
 
   const index: DocumentIndex = {
-    id: sessionId,
+    id: docId,
     filename: file.name,
     chunks,
     chunkTermFreqs,
   };
 
-  indexStore.set(sessionId, index);
+  indexStore.set(docId, index);
+  saveIndexToStorage(index); // persist across React Router navigation
   return index;
 }
 
 export function retrieveContext(
-  sessionId: string,
+  docId: string,
   topic: string,
   k = 3
 ): string[] {
-  const index = indexStore.get(sessionId);
+  // Check in-memory cache first, then sessionStorage
+  let index = indexStore.get(docId);
   if (!index) {
-    throw new Error(`Document index for session '${sessionId}' was not found.`);
+    index = loadIndexFromStorage(docId) ?? undefined;
+    if (index) indexStore.set(docId, index); // warm the cache
+  }
+
+  if (!index) {
+    throw new Error(
+      `Document index '${docId}' was not found. Please re-upload your PDF.`
+    );
   }
 
   const queryTokens = tokenize(topic.trim() || 'core concepts');
@@ -145,7 +199,7 @@ export function retrieveContext(
 
   const scored = index.chunks.map((chunk, i) => ({
     chunk,
-    score: cosineSimilarity(queryTf, index.chunkTermFreqs[i]),
+    score: cosineSimilarity(queryTf, index!.chunkTermFreqs[i]),
   }));
 
   scored.sort((a, b) => b.score - a.score);
@@ -153,6 +207,6 @@ export function retrieveContext(
   return scored.slice(0, k).map((s) => s.chunk);
 }
 
-export function getDocumentIndex(sessionId: string): DocumentIndex | null {
-  return indexStore.get(sessionId) ?? null;
+export function getDocumentIndex(docId: string): DocumentIndex | null {
+  return indexStore.get(docId) ?? loadIndexFromStorage(docId);
 }

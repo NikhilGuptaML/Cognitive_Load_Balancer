@@ -13,6 +13,7 @@ import {
   type CompactModelDef,
 } from '@runanywhere/web';
 import { LlamaCPP } from '@runanywhere/web-llamacpp';
+import { LlamaCppBridge } from '@runanywhere/web-llamacpp';
 
 const MODELS: CompactModelDef[] = [
   {
@@ -26,6 +27,29 @@ const MODELS: CompactModelDef[] = [
   },
 ];
 
+/**
+ * Override the WASM URL on LlamaCppBridge before register() is called.
+ *
+ * The SDK normally computes this as:
+ *   new URL('../../wasm/racommons-llamacpp.js', import.meta.url)
+ *
+ * When Vite pre-bundles or transforms the package, import.meta.url shifts
+ * to a shallower depth, producing the broken URL:
+ *   /node_modules/wasm/racommons-llamacpp.js
+ *
+ * By hard-coding the URL here we bypass import.meta.url entirely and tell
+ * the SDK exactly where to find the file. The Vite dev server serves both
+ * the scoped path and /node_modules/wasm/ (via symlink), so either works.
+ */
+function patchWasmUrls() {
+  const bridge = LlamaCppBridge.shared;
+  // Use the explicit node_modules path — guaranteed to exist and be served
+  bridge.wasmUrl =
+    '/node_modules/@runanywhere/web-llamacpp/wasm/racommons-llamacpp.js';
+  bridge.webgpuWasmUrl =
+    '/node_modules/@runanywhere/web-llamacpp/wasm/racommons-llamacpp-webgpu.js';
+}
+
 let _initPromise: Promise<void> | null = null;
 
 export async function initSDK(): Promise<void> {
@@ -36,6 +60,14 @@ export async function initSDK(): Promise<void> {
       environment: SDKEnvironment.Development,
       debug: true,
     });
+
+    // Patch WASM URLs BEFORE calling register() so the bridge never tries to
+    // resolve them via import.meta.url
+    try {
+      patchWasmUrls();
+    } catch (e) {
+      console.warn('[runanywhere] Could not patch WASM URLs, using SDK defaults:', e);
+    }
 
     await LlamaCPP.register();
 

@@ -1,6 +1,6 @@
 /**
- * LLM Client — replaces backend/llm/ollama_client.py
- * Uses RunAnywhere SDK TextGeneration for on-device inference via llama.cpp WASM.
+ * LLM Client — on-device inference via RunAnywhere SDK TextGeneration.
+ * Uses llama.cpp WASM, no backend needed.
  */
 
 import { TextGeneration } from '@runanywhere/web-llamacpp';
@@ -15,7 +15,7 @@ export class LLMUnavailableError extends Error {
 
 /**
  * Ensure the model is downloaded and loaded before generation.
- * Returns a progress callback unsubscribe function while downloading.
+ * Safe to call multiple times — idempotent.
  */
 export async function ensureModelReady(
   onProgress?: (progress: number) => void
@@ -26,22 +26,19 @@ export async function ensureModelReady(
   const model = models[0];
 
   if (!model) {
-    throw new LLMUnavailableError('No language model registered.');
+    throw new LLMUnavailableError(
+      'No language model registered. SDK may not have initialized correctly.'
+    );
   }
 
   if (model.status !== 'downloaded' && model.status !== 'loaded') {
-    // Set up progress tracking
     let unsubscribe: (() => void) | undefined;
     if (onProgress) {
       const handler = (evt: { modelId: string; progress: number }) => {
-        if (evt.modelId === MODEL_ID) {
-          onProgress(evt.progress ?? 0);
-        }
+        if (evt.modelId === MODEL_ID) onProgress(evt.progress ?? 0);
       };
-      // .on() returns an unsubscribe function — there is no .off()
       unsubscribe = EventBus.shared.on('model.downloadProgress', handler);
     }
-
     try {
       await ModelManager.downloadModel(MODEL_ID);
     } finally {
@@ -49,7 +46,6 @@ export async function ensureModelReady(
     }
   }
 
-  // Load model into WASM engine if not already loaded
   const loaded = ModelManager.getLoadedModel(ModelCategory.Language);
   if (!loaded || loaded.id !== MODEL_ID) {
     await ModelManager.loadModel(MODEL_ID);
@@ -57,18 +53,27 @@ export async function ensureModelReady(
 }
 
 /**
- * Generate text using the on-device LLM.
+ * Generate text with a hard timeout so the UI never hangs indefinitely.
+ * On-device LLM inference on CPU can take 30-300s; we cap at 120s.
  */
 export async function generate(
   prompt: string,
   options: { systemPrompt?: string; temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
+  const TIMEOUT_MS = 120_000; // 2 minutes max
+
+  const inferencePromise = TextGeneration.generate(prompt, {
+    maxTokens: options.maxTokens ?? 256, // keep short for speed
+    temperature: options.temperature ?? 0.2,
+    systemPrompt: options.systemPrompt,
+  });
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error('LLM inference timed out after 120s')), TIMEOUT_MS)
+  );
+
   try {
-    const result = await TextGeneration.generate(prompt, {
-      maxTokens: options.maxTokens ?? 512,
-      temperature: options.temperature ?? 0.2,
-      systemPrompt: options.systemPrompt,
-    });
+    const result = await Promise.race([inferencePromise, timeoutPromise]);
     return result.text.trim();
   } catch (err) {
     throw new LLMUnavailableError(
@@ -78,29 +83,23 @@ export async function generate(
 }
 
 /**
- * Generate text and parse the result as JSON.
- * Extracts the first JSON object from the response.
+ * Generate text and parse the first JSON object from the response.
  */
 export async function generateJSON<T = Record<string, unknown>>(
   prompt: string,
   options: { systemPrompt?: string; temperature?: number; maxTokens?: number } = {}
 ): Promise<T> {
   const response = await generate(prompt, options);
-  try {
-    const start = response.indexOf('{');
-    const end = response.lastIndexOf('}');
-    if (start === -1 || end === -1 || end < start) {
-      throw new Error('No JSON object found in response.');
-    }
-    return JSON.parse(response.substring(start, end + 1)) as T;
-  } catch (err) {
-    throw new Error(`LLM response was not valid JSON: ${response}`);
+  const start = response.indexOf('{');
+  const end = response.lastIndexOf('}');
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error(`No JSON object in LLM response: ${response.substring(0, 200)}`);
   }
+  return JSON.parse(response.substring(start, end + 1)) as T;
 }
 
 /**
- * Simple fallback grader when LLM is unavailable.
- * Uses keyword overlap between answer and context (same logic as Python backend).
+ * Keyword-overlap fallback grader — used when LLM is unavailable.
  */
 export function simpleGrade(
   answerText: string,
@@ -117,7 +116,7 @@ export function simpleGrade(
     contextChunks
       .flatMap((chunk) => chunk.split(/\s+/))
       .filter((t) => t.length > 3)
-      .map((t) => t.toLowerCase().replace(/[.,:;!?()[\]{}'"]/g, ''))
+      .map((t) => t.toLowerCase().replace(/[.,:;!?()[\]{}'\"]/g, ''))
   );
 
   let overlap = 0;
@@ -130,6 +129,6 @@ export function simpleGrade(
     correct: score >= 50,
     score: Math.round(score * 100) / 100,
     explanation:
-      'Fallback grading was used because the local model was unavailable. Answers with more document-grounded concepts score higher.',
+      'Fallback grading was used (on-device model unavailable). Answers grounded in document concepts score higher.',
   };
 }
