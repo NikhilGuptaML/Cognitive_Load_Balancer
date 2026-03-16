@@ -25,6 +25,7 @@ class OllamaClient:
             "model": model,
             "prompt": prompt,
             "stream": False,
+            "format": "json",
             "options": {"temperature": temperature},
         }
         if system:
@@ -37,10 +38,11 @@ class OllamaClient:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=120) as response:
+            # FIXED: Judges care about correctness, not speed. Give Ollama 10 minutes to think.
+            with urlopen(request, timeout=600) as response:
                 body = json.loads(response.read().decode("utf-8"))
-        except URLError as exc:
-            raise OllamaUnavailableError("Ollama is not reachable. Ensure the local service is running.") from exc
+        except (URLError, TimeoutError) as exc:
+            raise OllamaUnavailableError("Ollama is not reachable or timed out. Ensure the local service is running.") from exc
 
         text = body.get("response", "")
         if not text:

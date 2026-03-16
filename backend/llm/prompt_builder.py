@@ -6,46 +6,55 @@ import json
 
 
 def render_question_prompt(band: str, config: dict, context_chunks: list[str], history: list[dict]) -> str:
-    context_block = "\n\n".join(f"Chunk {index + 1}: {chunk}" for index, chunk in enumerate(context_chunks)) or "No context available."
-    history_block = json.dumps(history[-3:], indent=2) if history else "[]"
+    context_block = "\n\n".join(f"[{index + 1}] {chunk}" for index, chunk in enumerate(context_chunks)) or "No context available."
+    history_block = "\n".join(f"- {h['question']}" for h in history[-3:]) if history else "None yet."
+
     return f"""
-You are the Cognitive Load Balancer's local tutor.
-Return valid JSON only with keys: question_text, hint.
+You are an expert tutor generating exactly ONE question about the text.
+The student is currently in the {band} difficulty band.
+Their level is: {config.get('level_descriptor', 'average')}.
 
-Current load band: {band}
-Band configuration: {json.dumps(config)}
-Recent question history: {history_block}
-
-Context:
+CONTEXT:
 {context_block}
 
-Requirements:
-- Generate exactly one question.
-- Match the difficulty to the band configuration.
-- Prefer one of these question types: {', '.join(config.get('question_types', []))}.
-- Use the Bloom level {config.get('bloom_level')}.
-- Scaffolding level must be {config.get('scaffolding')}.
-- Keep the hint short and actionable.
+PREVIOUS QUESTIONS ASKED (DO NOT REPEAT THESE):
+{history_block}
+
+RULES:
+1. Generate exactly one question based ONLY on the CONTEXT above.
+2. The question must be a '{config.get('question_types', ['concept check'])[0]}' type question.
+3. Keep the question under 3 sentences.
+4. Provide a very short, 1-sentence hint.
+5. You must respond in STRICT JSON matching this format:
+{{
+  "question_text": "Write your question here",
+  "hint": "Write the short hint here"
+}}
 """.strip()
 
 
 def render_answer_evaluation_prompt(question_text: str, answer_text: str, context_chunks: list[str]) -> str:
     context_block = "\n\n".join(context_chunks) or "No context available."
     return f"""
-You are grading a student's answer offline.
-Return valid JSON only with keys: correct, score, explanation.
+You are an expert tutor grading a student's answer.
 
-Question:
+QUESTION:
 {question_text}
 
-Student answer:
+STUDENT ANSWER:
 {answer_text}
 
-Reference context:
+REFERENCE CONTEXT:
 {context_block}
 
-Scoring rules:
-- score must be from 0 to 100.
-- correct should be true when the answer is substantially correct.
-- explanation should be 1-3 sentences.
+RULES:
+1. Evaluate if the student's answer is correct based ONLY on the Reference Context.
+2. Give a score from 0 to 100.
+3. Write a 1-sentence explanation of why they got that score.
+4. You must respond in STRICT JSON matching this format:
+{{
+  "correct": true or false,
+  "score": 85,
+  "explanation": "Your 1-sentence explanation here."
+}}
 """.strip()

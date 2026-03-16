@@ -80,8 +80,7 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
       void fetchQuestion();
     }, 3000);
     return () => window.clearTimeout(timer);
-  // FIXED: Include sessionId in deps to avoid a stale closure when fetching the next question.
-  }, [feedback, sessionId]);
+  }, [feedback]);
 
   const badgeClass = useMemo(() => BAND_BADGES[question?.band ?? 'OPTIMAL'] ?? BAND_BADGES.OPTIMAL, [question?.band]);
 
