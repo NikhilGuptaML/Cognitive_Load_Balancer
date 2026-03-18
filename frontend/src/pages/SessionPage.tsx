@@ -5,10 +5,12 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import { AdaptationLog } from '../components/AdaptationLog';
 import { BandIndicator } from '../components/BandIndicator';
+import { FaceSignalCard } from '../components/FaceSignalCard';
 import { LoadGauge } from '../components/LoadGauge';
 import { PomodoroTimer } from '../components/PomodoroTimer';
 import { QuizPanel } from '../components/QuizPanel';
 import { LoadScoreProvider } from '../context/LoadScoreContext';
+import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useKeystrokeAnalyzer } from '../hooks/useKeystrokeAnalyzer';
 
 export function SessionPage() {
@@ -26,6 +28,7 @@ export function SessionPage() {
 
   const safeSessionId = useMemo(() => sessionId ?? '', [sessionId]);
   const { metrics } = useKeystrokeAnalyzer(safeSessionId || null, Boolean(safeSessionId));
+  const face = useFaceAnalyzer(safeSessionId || null, Boolean(safeSessionId));
 
   if (!safeSessionId) {
     return (
@@ -64,6 +67,12 @@ export function SessionPage() {
           <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
             <QuizPanel sessionId={safeSessionId} />
             <div className="space-y-6">
+              <FaceSignalCard
+                metrics={face.metrics}
+                videoRef={face.videoRef}
+                isActive={face.isActive}
+                error={face.error}
+              />
               <div className="glass-panel rounded-[2rem] p-6">
                 <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Typing Signal</p>
                 <div className="mt-4 grid gap-4 sm:grid-cols-3">
