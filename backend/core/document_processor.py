@@ -90,3 +90,16 @@ def retrieve_context(index: DocumentIndex | str, topic: str, k: int = 3) -> list
     result: dict[str, Any] = collection.query(query_embeddings=[query_embedding], n_results=k)
     documents = result.get("documents", [[]])
     return [chunk for chunk in documents[0] if chunk][:k]
+
+
+def get_all_chunks(index_name: str) -> list[str]:
+    client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    try:
+        collection = client.get_collection(index_name)
+    except Exception as exc:
+        raise LookupError(f"Chroma collection '{index_name}' was not found.") from exc
+    result = collection.get(include=["documents", "metadatas"])
+    
+    docs_with_idx = [(meta["chunk"], doc) for meta, doc in zip(result["metadatas"], result["documents"])]
+    docs_with_idx.sort(key=lambda x: x[0])
+    return [doc for _, doc in docs_with_idx]

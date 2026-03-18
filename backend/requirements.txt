@@ -13,3 +13,5 @@ opencv-python==4.10.0.84
 scipy==1.13.0
 numpy==1.26.0
 # FIXED: Removed unused ollama SDK — ollama_client.py uses raw urllib.
+groq==0.9.0
+python-dotenv==1.0.1

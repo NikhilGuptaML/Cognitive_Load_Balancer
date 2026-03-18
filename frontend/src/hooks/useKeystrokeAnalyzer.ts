@@ -51,7 +51,7 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
     ikiVariance: 0,
     wpm: 0,
     backspaceRate: 0,
-    rawScore: 0
+    rawScore: 50 // FIXED: Cold-start default should be 50 (neutral), not 0.
   });
 
   useEffect(() => {
@@ -67,6 +67,12 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
 
       const points = eventsRef.current;
       const intervals = points.slice(1).map((entry, index) => entry.timestamp - points[index].timestamp);
+      
+      if (points.length < 3) {
+        setMetrics({ ikiVariance: 0, wpm: 40, backspaceRate: 0, rawScore: 50 });
+        return;
+      }
+
       const ikiVariance = variance(intervals);
       const nonControlKeys = points.filter((entry) => entry.key.length === 1 || entry.key === 'Backspace');
       const charactersTyped = nonControlKeys.filter((entry) => entry.key !== 'Backspace').length;

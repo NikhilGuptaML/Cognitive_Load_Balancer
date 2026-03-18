@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import WebSocket
 
 
+ALPHA = 0.3
 WEIGHTS = {"keystroke": 0.50, "facial": 0.35, "latency": 0.15}
 
 BANDS = {
@@ -59,6 +60,7 @@ class SessionSignalState:
     latency: float | None = None
     band: str = "FLOW"
     score: float = 0.0
+    smoothed_score: float = 50.0  # FIXED: Per-session EWMA instead of global
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
     def as_payload(self) -> dict[str, Any]:
@@ -88,6 +90,11 @@ class LoadAggregator:
         self._states: dict[str, SessionSignalState] = {}
         self._connections: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
+
+    # FIXED: smooth() now operates on per-session state instead of a single global float.
+    def smooth(self, state: SessionSignalState, new_score: float) -> float:
+        state.smoothed_score = ALPHA * new_score + (1 - ALPHA) * state.smoothed_score
+        return round(state.smoothed_score, 1)
 
     async def register(self, session_id: str, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -120,6 +127,9 @@ class LoadAggregator:
                     "latency": state.latency,
                 }
             )
+            # Apply EWMA smoothing before setting the state's composite score
+            snapshot["score"] = self.smooth(state, snapshot["score"])
+            
             state.score = snapshot["score"]
             state.band = snapshot["band"]
             state.updated_at = datetime.utcnow()

@@ -13,7 +13,8 @@ export default defineConfig({
       '/question': 'http://localhost:8000',
       '/answer': 'http://localhost:8000',
       '/signal': 'http://localhost:8000',
-      '/health': 'http://localhost:8000'
+      '/health': 'http://localhost:8000',
+      '/reviews': 'http://localhost:8000'
     }
   }
 });

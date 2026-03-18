@@ -36,7 +36,8 @@ export function SessionPage() {
   const safeSessionId = useMemo(() => sessionId ?? '', [sessionId]);
   const [correctRevisionDate, setCorrectRevisionDate] = useState<Date | null>(null);
   const [incorrectRevisionDate, setIncorrectRevisionDate] = useState<Date | null>(null);
-  const { metrics } = useKeystrokeAnalyzer(safeSessionId || null, Boolean(safeSessionId));
+  // FIXED: Disable keystroke analyzer during calibration so calibration typing doesn't corrupt session signals.
+  const { metrics } = useKeystrokeAnalyzer(safeSessionId || null, Boolean(safeSessionId) && !isCalibrating);
   const face = useFaceAnalyzer(safeSessionId || null, Boolean(safeSessionId) && !isCalibrating);
 
   // Fetch revision schedule from backend

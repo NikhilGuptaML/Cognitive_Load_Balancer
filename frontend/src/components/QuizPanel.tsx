@@ -1,13 +1,15 @@
 /* This component runs the question-answer loop: fetch a question, collect the learner's response, submit it with latency, show short feedback, and then automatically request the next question. */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 type QuestionResponse = {
   question_id: string;
   question_text: string;
   band: string;
-  hint?: string | null;
+  options?: Record<string, string>;
   is_review?: boolean;
+  session_complete?: boolean;
 };
 
 type FeedbackState = {
@@ -44,9 +46,9 @@ function FeedbackModal({ feedback }: { feedback: NonNullable<FeedbackState> }) {
 }
 
 export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: string; onCorrect?: () => void; onIncorrect?: () => void }) {
+  const navigate = useNavigate();
   const [question, setQuestion] = useState<QuestionResponse | null>(null);
   const [answer, setAnswer] = useState('');
-  const [showHint, setShowHint] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -60,9 +62,13 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
         throw new Error('Question request failed');
       }
       const payload = (await response.json()) as QuestionResponse;
+      // FIXED: Handle session_complete signal — navigate to report page.
+      if (payload.session_complete) {
+        navigate(`/report/${sessionId}`);
+        return;
+      }
       setQuestion(payload);
       setAnswer('');
-      setShowHint(false);
       setError(null);
       appearedAtRef.current = Date.now();
     } catch {
@@ -149,26 +155,33 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
           {isLoading && !question ? 'Generating a local question...' : question?.question_text ?? 'No question loaded yet.'}
         </p>
         {error ? <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p> : null}
-        {question?.hint ? (
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={() => setShowHint((current) => !current)}
-              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-            >
-              {showHint ? 'Hide Hint' : 'Show Hint'}
-            </button>
-            {showHint ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">{question.hint}</p> : null}
+        {question?.options && (
+          <div className="mt-5 flex flex-col gap-2">
+            {Object.entries(question.options).map(([letter, text]) => (
+              <button
+                key={letter}
+                type="button"
+                onClick={() => setAnswer(String(text))}
+                className={`flex items-start gap-3 rounded-xl p-3 shadow-sm text-left transition ${
+                  answer === String(text) ? 'bg-indigo-50 ring-2 ring-indigo-300' : 'bg-slate-50 hover:bg-slate-100'
+                }`}
+              >
+                <span className="font-bold text-indigo-600">{letter}:</span>
+                <span className="text-slate-800">{text}</span>
+              </button>
+            ))}
           </div>
-        ) : null}
+        )}
       </div>
 
-      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer</label>
-      <textarea
+      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer (type the option text)</label>
+      <input
+        type="text"
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Type your answer here. Typing rhythm is part of the local load estimate."
-        className="mt-3 min-h-40 w-full rounded-[1.75rem] border border-white/50 bg-white/85 p-5 text-base leading-7 text-slate-900 outline-none transition focus:border-amber-400"
+        placeholder="Type the full option text or click an option above..."
+        className="mt-3 w-full rounded-2xl border border-slate-300 bg-white p-4 text-lg font-medium text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+        onKeyDown={(e) => { if (e.key === 'Enter' && answer.trim()) void submitAnswer(); }}
       />
       <div className="mt-4 flex justify-end">
         <button

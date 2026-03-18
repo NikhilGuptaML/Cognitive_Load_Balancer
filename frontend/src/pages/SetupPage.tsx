@@ -139,7 +139,7 @@ export function SetupPage() {
             </div>
             <div className="rounded-[1.75rem] bg-white/65 p-5">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Model</p>
-              <p className="mt-3 text-2xl font-semibold text-slate-900">Phi-3 Mini</p>
+              <p className="mt-3 text-2xl font-semibold text-slate-900">Llama 3.3 70B</p>
             </div>
             <div className="rounded-[1.75rem] bg-white/65 p-5">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Loop rate</p>

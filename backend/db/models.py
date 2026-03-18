@@ -68,6 +68,10 @@ class Question(Base):
     load_at_time = Column(Float, nullable=False)
     asked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     hint = Column(Text, nullable=True)
+    
+    options = Column(JSON, nullable=True)                 
+    correct_answer = Column(String, nullable=True)        
+    explanation = Column(Text, nullable=True)
 
     # Spaced-repetition scheduling fields
     next_review_at = Column(Integer, nullable=True)       # Unix timestamp of next scheduled review

@@ -68,6 +68,9 @@ def _migrate_fsrs_columns() -> None:
         ("review_count", "INTEGER DEFAULT 0"),
         ("doc_id", "TEXT"),
         ("was_correct", "INTEGER"),
+        ("options", "JSON"),
+        ("correct_answer", "TEXT"),
+        ("explanation", "TEXT"),
     ]
     for col_name, col_type in migrations:
         if col_name not in existing:

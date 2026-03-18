@@ -10,6 +10,8 @@ const LEFT_EYE = [362, 385, 387, 263, 373, 380];
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
 const BROW_LEFT = 334;
 const BROW_RIGHT = 105;
+const LEFT_IRIS = [474, 475, 476, 477];
+const RIGHT_IRIS = [469, 470, 471, 472];
 
 const EAR_BLINK_THRESHOLD = 0.21;
 const HISTORY_SIZE = 120;
@@ -20,6 +22,7 @@ export type FaceMetrics = {
   blinksPerMin: number;
   browDistance: number;
   rawScore: number;
+  irisRatio: number;
 };
 
 function euclidean(a: { x: number; y: number }, b: { x: number; y: number }): number {
@@ -60,12 +63,35 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export function useFaceAnalyzer(sessionId: string | null, enabled = true) {
+type FaceBaseline = { ear: number | null; brow: number | null; iris: number | null };
+
+function readFaceBaseline(): FaceBaseline | undefined {
+  try {
+    const raw = window.localStorage.getItem('clb.faceBaseline');
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    return {
+      ear: typeof parsed.ear === 'number' ? parsed.ear : null,
+      brow: typeof parsed.brow === 'number' ? parsed.brow : null,
+      iris: typeof parsed.iris === 'number' ? parsed.iris : null,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function useFaceAnalyzer(
+  sessionId: string | null,
+  enabled = true,
+  baselineOverride?: FaceBaseline,
+  pushToBackend = true
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const landmarkerRef = useRef<FaceLandmarker | null>(null);
   const earHistoryRef = useRef<number[]>([]);
   const browHistoryRef = useRef<number[]>([]);
+  const irisHistoryRef = useRef<number[]>([]);
   const lastProcessTimeRef = useRef(0);
   const rafRef = useRef(0);
   const streamRef = useRef<MediaStream | null>(null);
@@ -75,7 +101,14 @@ export function useFaceAnalyzer(sessionId: string | null, enabled = true) {
     blinksPerMin: 0,
     browDistance: 0,
     rawScore: 0,
+    irisRatio: 0,
   });
+  const cachedStoredBaseline = useMemo(() => readFaceBaseline(), []);
+  const actualBaseline = baselineOverride || cachedStoredBaseline;
+  const actualBaselineRef = useRef(actualBaseline);
+  useEffect(() => {
+    actualBaselineRef.current = actualBaseline;
+  }, [actualBaseline]);
   const [isActive, setIsActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,26 +193,42 @@ export function useFaceAnalyzer(sessionId: string | null, enabled = true) {
         // Blink rate
         const blinksPerMin = computeBlinkRate(earHist, 5);
 
-        // Brow furrow
-        const browDist = Math.sqrt(
-          (landmarks[BROW_LEFT].x - landmarks[BROW_RIGHT].x) ** 2 +
-            (landmarks[BROW_LEFT].y - landmarks[BROW_RIGHT].y) ** 2
-        );
+        // Brow furrow (horizontal distance of inner brows: 55 and 285)
+        const leftInnerX = landmarks[55].x * w;
+        const rightInnerX = landmarks[285].x * w;
+        const browDist = Math.abs(rightInnerX - leftInnerX);
+
         const browHist = browHistoryRef.current;
         browHist.push(browDist);
         if (browHist.length > HISTORY_SIZE) browHist.shift();
 
-        const baseline = Math.max(
+        const currentBaseline = actualBaselineRef.current;
+        const baselineBrow = currentBaseline?.brow ?? Math.max(
           browHist.reduce((s, v) => s + v, 0) / browHist.length,
           1e-6
         );
-        const contraction = clamp((baseline - browDist) / baseline, 0, 1);
+        const contraction = clamp((baselineBrow - browDist) / baselineBrow, 0, 1);
         const browScore = Math.round(contraction * 40 * 100) / 100;
 
-        // Composite score (same formula as backend)
+        // Iris tracking
+        const lIris = LEFT_IRIS.map((i) => landmarks[i]);
+        const irisW = Math.abs(lIris[0].x - lIris[2].x) * w;
+        const eyeW = Math.abs(landmarks[133].x - landmarks[33].x) * w;
+        const irisRatio = eyeW > 0 ? irisW / eyeW : 0;
+        
+        let irisScore = clamp(irisRatio * 200, 0, 100);
+        if (currentBaseline?.iris && currentBaseline.iris > 0) {
+          const delta = Math.max(0, irisRatio - currentBaseline.iris);
+          irisScore = clamp((delta / currentBaseline.iris) * 200, 0, 100);
+        }
+
+        // Composite score
         const blinkComponent = clamp(Math.abs(blinksPerMin - 18) * 2.5, 0, 60);
+        const earScoreNormalized = (blinkComponent / 60) * 100;
+        const browScoreNormalized = (browScore / 40) * 100;
+        
         const rawScore = clamp(
-          Math.round((blinkComponent + browScore) * 100) / 100,
+          Math.round((earScoreNormalized * 0.40 + browScoreNormalized * 0.33 + irisScore * 0.27) * 100) / 100,
           0,
           100
         );
@@ -189,6 +238,7 @@ export function useFaceAnalyzer(sessionId: string | null, enabled = true) {
           blinksPerMin: Math.round(blinksPerMin * 100) / 100,
           browDistance: Math.round(browDist * 10000) / 10000,
           rawScore: Math.round(rawScore * 100) / 100,
+          irisRatio: Math.round(irisRatio * 10000) / 10000,
         });
       }
     } catch {
@@ -233,7 +283,7 @@ export function useFaceAnalyzer(sessionId: string | null, enabled = true) {
   }, [metrics]);
 
   useEffect(() => {
-    if (!enabled || !sessionId) return undefined;
+    if (!enabled || !sessionId || !pushToBackend) return undefined;
 
     const interval = window.setInterval(async () => {
       const current = metricsRef.current;

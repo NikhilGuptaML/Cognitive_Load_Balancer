@@ -1,6 +1,7 @@
 /* Full-screen calibration modal that captures the user's relaxed typing baseline before the session starts. Computes IKI variance, WPM, and backspace rate from a fixed prompt sentence. */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 
 export type TypingBaseline = {
   ikiVariance: number;
@@ -21,11 +22,21 @@ export function CalibrationModal({ onComplete }: { onComplete: (baseline: Typing
   const [typed, setTyped] = useState('');
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
+  
+  const [faceCalibrated, setFaceCalibrated] = useState(false);
+  const [faceProgress, setFaceProgress] = useState(0);
+  
   const timestamps = useRef<number[]>([]);
   const backspaceCount = useRef(0);
   const totalKeyCount = useRef(0);
   const startTime = useRef(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  
+  const faceSamples = useRef<{ ear: number[]; brow: number[]; iris: number[] }>({ ear: [], brow: [], iris: [] });
+  const faceStartTime = useRef(Date.now());
+  const [faceActivePrev, setFaceActivePrev] = useState(false);
+
+  const face = useFaceAnalyzer('calibration_temp_id', !faceCalibrated, undefined, false);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -52,8 +63,12 @@ export function CalibrationModal({ onComplete }: { onComplete: (baseline: Typing
     setFinished(true);
     const baseline = computeBaseline();
     window.localStorage.setItem('clb.typingBaseline', JSON.stringify(baseline));
-    onComplete(baseline);
-  }, [typed, computeBaseline, onComplete]);
+    // FIXED: Don't call onComplete until face calibration is also done.
+    // The useEffect below will fire onComplete once both are ready.
+    if (faceCalibrated) {
+      onComplete(baseline);
+    }
+  }, [typed, computeBaseline, onComplete, faceCalibrated]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -87,7 +102,53 @@ export function CalibrationModal({ onComplete }: { onComplete: (baseline: Typing
     [finished],
   );
 
-  const progress = Math.min((typed.length / CALIBRATION_PROMPT.length) * 100, 100);
+  useEffect(() => {
+    if (face.isActive && !faceActivePrev) {
+      faceStartTime.current = Date.now();
+      setFaceActivePrev(true);
+    }
+  }, [face.isActive, faceActivePrev]);
+
+  useEffect(() => {
+    if (faceCalibrated || !face.isActive) return;
+
+    if (face.metrics.ear > 0 || face.metrics.browDistance > 0 || face.metrics.irisRatio > 0) {
+      faceSamples.current.ear.push(face.metrics.ear);
+      faceSamples.current.brow.push(face.metrics.browDistance);
+      faceSamples.current.iris.push(face.metrics.irisRatio);
+    }
+
+    const elapsed = Date.now() - faceStartTime.current;
+    if (elapsed >= 5000) {
+      setFaceCalibrated(true);
+      setFaceProgress(100);
+
+      const e = faceSamples.current.ear;
+      const b = faceSamples.current.brow;
+      const i = faceSamples.current.iris;
+
+      const avgEar = e.length ? e.reduce((a, c) => a + c, 0) / e.length : null;
+      const avgBrow = b.length ? b.reduce((a, c) => a + c, 0) / b.length : null;
+      const avgIris = i.length ? i.reduce((a, c) => a + c, 0) / i.length : null;
+
+      window.localStorage.setItem(
+        'clb.faceBaseline',
+        JSON.stringify({ ear: avgEar, brow: avgBrow, iris: avgIris })
+      );
+    } else {
+      setFaceProgress((elapsed / 5000) * 100);
+    }
+  }, [face.metrics, face.isActive, faceCalibrated]);
+
+  // FIXED: Fire onComplete when face calibration finishes after typing was already done.
+  useEffect(() => {
+    if (finished && faceCalibrated) {
+      const baseline = computeBaseline();
+      onComplete(baseline);
+    }
+  }, [faceCalibrated, finished, computeBaseline, onComplete]);
+
+  const typeProgress = Math.min((typed.length / CALIBRATION_PROMPT.length) * 100, 100);
 
   return (
     <div
@@ -102,6 +163,7 @@ export function CalibrationModal({ onComplete }: { onComplete: (baseline: Typing
         backdropFilter: 'blur(12px)',
       }}
     >
+      <video ref={face.videoRef} autoPlay playsInline muted style={{ display: 'none' }} />
       <div
         style={{
           width: '100%',
@@ -131,12 +193,16 @@ export function CalibrationModal({ onComplete }: { onComplete: (baseline: Typing
             fontSize: '1.5rem',
             fontWeight: 700,
             color: '#0f172a',
-            marginBottom: '1.5rem',
+            marginBottom: '0.5rem',
             lineHeight: 1.3,
           }}
         >
-          Type at your normal, comfortable pace
+          Look at the screen naturally while typing
         </h2>
+        
+        <p style={{ color: '#475569', marginBottom: '1.5rem', fontSize: '0.95rem' }}>
+          We are analyzing your baseline facial metrics for 5 seconds and your comfortable typing pace.
+        </p>
 
         {/* Prompt */}
         <div
@@ -183,50 +249,78 @@ export function CalibrationModal({ onComplete }: { onComplete: (baseline: Typing
           onBlur={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
         />
 
-        {/* Progress bar */}
-        <div
-          style={{
-            marginTop: '1rem',
-            height: 6,
-            borderRadius: 999,
-            background: '#e2e8f0',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              height: '100%',
-              width: `${progress}%`,
-              borderRadius: 999,
-              background: 'linear-gradient(90deg, #6366f1, #818cf8)',
-              transition: 'width 0.15s ease',
-            }}
-          />
+        {/* Progress bars container */}
+        <div style={{ display: 'flex', gap: '2rem', marginTop: '1.5rem' }}>
+          {/* Facial progress */}
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600 }}>FACIAL BASELINE {face.error && <span style={{color: 'red'}}>({face.error})</span>}</p>
+            <div
+              style={{
+                height: 6,
+                borderRadius: 999,
+                background: '#e2e8f0',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${faceProgress}%`,
+                  borderRadius: 999,
+                  background: faceCalibrated ? '#10b981' : 'linear-gradient(90deg, #6366f1, #818cf8)',
+                  transition: 'width 0.15s ease',
+                }}
+              />
+            </div>
+          </div>
+          
+          {/* Typing progress */}
+          <div style={{ flex: 1 }}>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem', fontWeight: 600 }}>TYPING BASELINE</p>
+            <div
+              style={{
+                height: 6,
+                borderRadius: 999,
+                background: '#e2e8f0',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${typeProgress}%`,
+                  borderRadius: 999,
+                  background: finished ? '#10b981' : 'linear-gradient(90deg, #6366f1, #818cf8)',
+                  transition: 'width 0.15s ease',
+                }}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Done button */}
         <button
           type="button"
           onClick={handleDone}
-          disabled={typed.length < 10 || finished}
+          disabled={!finished || !faceCalibrated}
           style={{
-            marginTop: '1.5rem',
+            marginTop: '2rem',
             width: '100%',
             padding: '0.85rem 0',
             borderRadius: '1rem',
             border: 'none',
             background:
-              typed.length >= 10 && !finished
-                ? 'linear-gradient(135deg, #6366f1, #818cf8)'
+              finished && faceCalibrated
+                ? 'linear-gradient(135deg, #10b981, #34d399)'
                 : '#cbd5e1',
             color: '#fff',
             fontWeight: 600,
             fontSize: '0.95rem',
-            cursor: typed.length >= 10 && !finished ? 'pointer' : 'not-allowed',
+            cursor: finished && faceCalibrated ? 'pointer' : 'not-allowed',
             transition: 'background 0.2s, transform 0.1s',
           }}
         >
-          Done
+          {finished && faceCalibrated ? 'Start Session' : 'Calibrating...'}
         </button>
 
         <p
