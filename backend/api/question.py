@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -46,6 +47,25 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
     document = db.get(Document, session.doc_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found.")
+
+    # --- FSRS: check for overdue review questions from previous sessions ---
+    now = int(time.time())
+    due_question = db.query(Question).filter(
+        Question.session_id != session_id,
+        Question.next_review_at <= now,
+        Question.next_review_at != None,  # noqa: E711
+    ).order_by(Question.next_review_at.asc()).first()
+
+    if due_question:
+        snapshot = load_aggregator.get_state(session_id)
+        band = get_band(snapshot["score"])
+        return {
+            "question_id": due_question.id,
+            "question_text": due_question.text,
+            "band": band,
+            "hint": due_question.hint,
+            "is_review": True,
+        }
 
     snapshot = load_aggregator.get_state(session_id)
     band = get_band(snapshot["score"])

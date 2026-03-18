@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from core.document_processor import retrieve_context
+from core.fsrs import schedule, score_to_correct
 from core.load_aggregator import load_aggregator
 from db.database import get_db
 from db.models import Answer, Document, Question, Session as StudySession
@@ -91,6 +92,20 @@ async def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
         score=score,
     )
     db.add(answer)
+
+    # --- FSRS spaced-repetition scheduling ---
+    correct_level = score_to_correct(score)
+    new_stability, new_difficulty, next_review_at, interval_days = schedule(
+        stability=question.review_stability or 1.0,
+        difficulty=question.review_difficulty or 5.0,
+        correct=correct_level,
+        review_count=question.review_count or 0,
+    )
+    question.review_stability = new_stability
+    question.review_difficulty = new_difficulty
+    question.next_review_at = next_review_at
+    question.review_count = (question.review_count or 0) + 1
+
     db.commit()
 
-    return {"correct": correct, "score": score, "explanation": explanation}
+    return {"correct": correct, "score": score, "explanation": explanation, "next_review_in_days": interval_days}

@@ -7,12 +7,14 @@ type QuestionResponse = {
   question_text: string;
   band: string;
   hint?: string | null;
+  is_review?: boolean;
 };
 
 type FeedbackState = {
   correct: boolean;
   score: number;
   explanation: string;
+  next_review_in_days?: number;
 } | null;
 
 const BAND_BADGES: Record<string, string> = {
@@ -30,6 +32,11 @@ function FeedbackModal({ feedback }: { feedback: NonNullable<FeedbackState> }) {
         <p className="text-sm uppercase tracking-[0.24em] text-slate-300">Feedback</p>
         <h4 className="mt-3 text-3xl font-semibold">{feedback.correct ? 'Correct' : feedback.score >= 50 ? 'Partial' : 'Incorrect'}</h4>
         <p className="mt-2 text-lg text-slate-200">Score: {Math.round(feedback.score)}</p>
+        {feedback.next_review_in_days != null && (
+          <p className="mt-2 text-sm text-slate-400">
+            Next review in {feedback.next_review_in_days} day{feedback.next_review_in_days > 1 ? 's' : ''}
+          </p>
+        )}
         <p className="mt-4 text-sm leading-6 text-slate-300">{feedback.explanation}</p>
       </div>
     </div>
@@ -124,7 +131,12 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Adaptive Quiz</p>
           <h3 className="mt-2 text-2xl font-semibold text-slate-900">Current Prompt</h3>
         </div>
-        {question ? <span className={`rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`}>{question.band}</span> : null}
+        <div className="flex items-center gap-2">
+          {question?.is_review && (
+            <span className="rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">Review</span>
+          )}
+          {question ? <span className={`rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`}>{question.band}</span> : null}
+        </div>
       </div>
 
       <div className="mt-6 rounded-[1.75rem] bg-white/70 p-5">

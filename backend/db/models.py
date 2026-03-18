@@ -67,6 +67,12 @@ class Question(Base):
     asked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     hint = Column(Text, nullable=True)
 
+    # FSRS spaced-repetition scheduling fields
+    next_review_at = Column(Integer, nullable=True)       # Unix timestamp of next scheduled review
+    review_stability = Column(Float, default=1.0)         # FSRS stability value
+    review_difficulty = Column(Float, default=5.0)        # FSRS difficulty value (1-10)
+    review_count = Column(Integer, default=0)             # how many times this question has been reviewed
+
     session = relationship("Session", back_populates="questions")
     answers = relationship("Answer", back_populates="question", cascade="all, delete-orphan")
 

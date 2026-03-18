@@ -9,6 +9,7 @@ import { FaceSignalCard } from '../components/FaceSignalCard';
 import { LoadGauge } from '../components/LoadGauge';
 import { PomodoroTimer } from '../components/PomodoroTimer';
 import { QuizPanel } from '../components/QuizPanel';
+import { ReviewQueue } from '../components/ReviewQueue';
 import { LoadScoreProvider } from '../context/LoadScoreContext';
 import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useKeystrokeAnalyzer } from '../hooks/useKeystrokeAnalyzer';
@@ -93,6 +94,8 @@ export function SessionPage() {
               <AdaptationLog sessionId={safeSessionId} />
             </div>
           </div>
+
+          <ReviewQueue sessionId={safeSessionId} />
         </div>
       </div>
     </LoadScoreProvider>
