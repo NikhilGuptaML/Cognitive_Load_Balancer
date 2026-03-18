@@ -43,7 +43,7 @@ function FeedbackModal({ feedback }: { feedback: NonNullable<FeedbackState> }) {
   );
 }
 
-export function QuizPanel({ sessionId }: { sessionId: string }) {
+export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: string; onCorrect?: () => void; onIncorrect?: () => void }) {
   const [question, setQuestion] = useState<QuestionResponse | null>(null);
   const [answer, setAnswer] = useState('');
   const [showHint, setShowHint] = useState(false);
@@ -115,6 +115,11 @@ export function QuizPanel({ sessionId }: { sessionId: string }) {
 
       const payload = await response.json();
       setFeedback(payload);
+      if (payload.correct) {
+        onCorrect?.();
+      } else {
+        onIncorrect?.();
+      }
       setError(null);
     } catch {
       // FIXED: Provide actionable feedback when answer submission fails.

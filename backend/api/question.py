@@ -48,10 +48,10 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found.")
 
-    # --- FSRS: check for overdue review questions from previous sessions ---
+    # --- Check for overdue review questions for this document ---
     now = int(time.time())
     due_question = db.query(Question).filter(
-        Question.session_id != session_id,
+        Question.doc_id == session.doc_id,
         Question.next_review_at <= now,
         Question.next_review_at != None,  # noqa: E711
     ).order_by(Question.next_review_at.asc()).first()
@@ -96,6 +96,7 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
     question = Question(
         id=str(uuid4()),
         session_id=session_id,
+        doc_id=session.doc_id,
         text=question_text,
         band=band,
         load_at_time=snapshot["score"],

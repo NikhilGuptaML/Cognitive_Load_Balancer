@@ -1,6 +1,8 @@
-"""This route evaluates an answer against locally retrieved document context, updates the response-latency signal, and stores the graded result for reports and later adaptation decisions."""
+"""This route evaluates an answer against locally retrieved document context, updates the response-latency signal, and stores the graded result. Uses fixed revision timers: 1 week for correct, 1 day for incorrect."""
 
 from __future__ import annotations
+
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -8,7 +10,6 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from core.document_processor import retrieve_context
-from core.fsrs import schedule, score_to_correct
 from core.load_aggregator import load_aggregator
 from db.database import get_db
 from db.models import Answer, Document, Question, Session as StudySession
@@ -18,6 +19,9 @@ from signals.latency_tracker import latency_tracker
 
 
 router = APIRouter(prefix="/answer", tags=["answer"])
+
+CORRECT_INTERVAL_DAYS = 7   # 1 week for correct answers
+INCORRECT_INTERVAL_DAYS = 1  # 1 day for incorrect answers
 
 
 class AnswerRequest(BaseModel):
@@ -93,17 +97,15 @@ async def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
     )
     db.add(answer)
 
-    # --- FSRS spaced-repetition scheduling ---
-    correct_level = score_to_correct(score)
-    new_stability, new_difficulty, next_review_at, interval_days = schedule(
-        stability=question.review_stability or 1.0,
-        difficulty=question.review_difficulty or 5.0,
-        correct=correct_level,
-        review_count=question.review_count or 0,
-    )
-    question.review_stability = new_stability
-    question.review_difficulty = new_difficulty
-    question.next_review_at = next_review_at
+    # --- Fixed-interval spaced-repetition scheduling ---
+    now = int(time.time())
+    if correct:
+        interval_days = CORRECT_INTERVAL_DAYS
+    else:
+        interval_days = INCORRECT_INTERVAL_DAYS
+
+    question.next_review_at = now + interval_days * 86400
+    question.was_correct = correct
     question.review_count = (question.review_count or 0) + 1
 
     db.commit()

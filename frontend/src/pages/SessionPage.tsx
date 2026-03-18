@@ -1,6 +1,6 @@
-/* This page composes the live load context, passive keystroke analysis, and adaptive quiz components into the main study experience. */
+/* This page composes the live load context, passive keystroke analysis, and adaptive quiz components into the main study experience. Fetches revision schedule from backend. */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { AdaptationLog } from '../components/AdaptationLog';
@@ -18,18 +18,57 @@ export function SessionPage() {
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
   const stored = window.localStorage.getItem('clb.activeSession');
-  let parsed: { pomodoroLength?: number } | null = null;
+  let parsed: { pomodoroLength?: number; docId?: string } | null = null;
   try {
-    // FIXED: Prevent runtime crash when stored session payload is malformed.
-    parsed = stored ? (JSON.parse(stored) as { pomodoroLength?: number }) : null;
+    parsed = stored ? (JSON.parse(stored) as { pomodoroLength?: number; docId?: string }) : null;
   } catch {
     parsed = null;
   }
   const durationMinutes = parsed?.pomodoroLength ?? 25;
+  const docId = parsed?.docId ?? '';
 
   const safeSessionId = useMemo(() => sessionId ?? '', [sessionId]);
+  const [correctRevisionDate, setCorrectRevisionDate] = useState<Date | null>(null);
+  const [incorrectRevisionDate, setIncorrectRevisionDate] = useState<Date | null>(null);
   const { metrics } = useKeystrokeAnalyzer(safeSessionId || null, Boolean(safeSessionId));
   const face = useFaceAnalyzer(safeSessionId || null, Boolean(safeSessionId));
+
+  // Fetch revision schedule from backend
+  const fetchRevisionSchedule = async () => {
+    if (!safeSessionId) return;
+    try {
+      const url = docId
+        ? `/reviews?session_id=${safeSessionId}&doc_id=${docId}`
+        : `/reviews?session_id=${safeSessionId}`;
+      const response = await fetch(url);
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.earliest_correct_review) {
+        setCorrectRevisionDate(new Date(data.earliest_correct_review * 1000));
+      }
+      if (data.earliest_incorrect_review) {
+        setIncorrectRevisionDate(new Date(data.earliest_incorrect_review * 1000));
+      }
+    } catch {
+      // Silently ignore — review schedule is supplementary
+    }
+  };
+
+  useEffect(() => {
+    void fetchRevisionSchedule();
+  }, [safeSessionId]);
+
+  const handleCorrect = () => {
+    // Set 1 week from now, then refresh from backend
+    setCorrectRevisionDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    void fetchRevisionSchedule();
+  };
+
+  const handleIncorrect = () => {
+    // Set 1 day from now, then refresh from backend
+    setIncorrectRevisionDate(new Date(Date.now() + 1 * 24 * 60 * 60 * 1000));
+    void fetchRevisionSchedule();
+  };
 
   if (!safeSessionId) {
     return (
@@ -66,7 +105,11 @@ export function SessionPage() {
           </div>
 
           <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-            <QuizPanel sessionId={safeSessionId} />
+            <QuizPanel
+              sessionId={safeSessionId}
+              onCorrect={handleCorrect}
+              onIncorrect={handleIncorrect}
+            />
             <div className="space-y-6">
               <FaceSignalCard
                 metrics={face.metrics}
@@ -95,7 +138,10 @@ export function SessionPage() {
             </div>
           </div>
 
-          <ReviewQueue sessionId={safeSessionId} />
+          <ReviewQueue
+            correctRevisionDate={correctRevisionDate}
+            incorrectRevisionDate={incorrectRevisionDate}
+          />
         </div>
       </div>
     </LoadScoreProvider>

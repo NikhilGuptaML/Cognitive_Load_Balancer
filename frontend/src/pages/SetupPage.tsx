@@ -1,19 +1,50 @@
-/* This page handles document upload and session creation so the learner can move from a blank state into a fully initialized local study session in one flow. */
+/* This page handles document upload and session creation. Detects re-uploads and surfaces overdue questions. */
 
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+type OverdueQuestion = {
+  question_id: string;
+  question_text: string;
+  next_review_at: number;
+};
+
 type UploadState = {
   docId: string | null;
   chunkCount: number;
+  isReupload: boolean;
+  overdueCorrect: OverdueQuestion[];
+  overdueIncorrect: OverdueQuestion[];
+  earliestCorrectReview: number | null;
+  earliestIncorrectReview: number | null;
 };
+
+function formatTimestamp(ts: number): string {
+  return new Date(ts * 1000).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
 
 export function SetupPage() {
   const navigate = useNavigate();
   const [userId, setUserId] = useState('local-student');
   const [pomodoroLength, setPomodoroLength] = useState(25);
   const [file, setFile] = useState<File | null>(null);
-  const [uploadState, setUploadState] = useState<UploadState>({ docId: null, chunkCount: 0 });
+  const [uploadState, setUploadState] = useState<UploadState>({
+    docId: null,
+    chunkCount: 0,
+    isReupload: false,
+    overdueCorrect: [],
+    overdueIncorrect: [],
+    earliestCorrectReview: null,
+    earliestIncorrectReview: null,
+  });
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -37,7 +68,15 @@ export function SetupPage() {
       if (!response.ok) {
         throw new Error(payload.detail ?? 'Upload failed.');
       }
-      setUploadState({ docId: payload.doc_id, chunkCount: payload.chunk_count });
+      setUploadState({
+        docId: payload.doc_id,
+        chunkCount: payload.chunk_count,
+        isReupload: payload.is_reupload ?? false,
+        overdueCorrect: payload.overdue_correct ?? [],
+        overdueIncorrect: payload.overdue_incorrect ?? [],
+        earliestCorrectReview: payload.earliest_correct_review ?? null,
+        earliestIncorrectReview: payload.earliest_incorrect_review ?? null,
+      });
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : 'Upload failed.');
     } finally {
@@ -81,6 +120,8 @@ export function SetupPage() {
       setIsBusy(false);
     }
   };
+
+  const totalOverdue = uploadState.overdueCorrect.length + uploadState.overdueIncorrect.length;
 
   return (
     <div className="app-shell">
@@ -144,10 +185,86 @@ export function SetupPage() {
               >
                 {isBusy ? 'Working...' : 'Upload and Index PDF'}
               </button>
-              {uploadState.docId ? (
+              {uploadState.docId && !uploadState.isReupload ? (
                 <p className="mt-3 text-sm text-emerald-700">Indexed successfully: {uploadState.chunkCount} chunks ready.</p>
               ) : null}
             </div>
+
+            {/* Re-upload detection: show overdue questions */}
+            {uploadState.isReupload && (
+              <div className="rounded-[1.5rem] border border-amber-200 bg-amber-50/80 p-5 space-y-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">📄</span>
+                  <p className="text-sm font-semibold text-amber-900">
+                    This file was uploaded before — {uploadState.chunkCount} chunks already indexed.
+                  </p>
+                </div>
+
+                {totalOverdue > 0 ? (
+                  <p className="text-sm font-semibold text-amber-800">
+                    📋 {totalOverdue} question{totalOverdue > 1 ? 's' : ''} due for review
+                  </p>
+                ) : (
+                  <p className="text-sm text-amber-700">No questions are overdue yet.</p>
+                )}
+
+                {/* Earliest revision times */}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-[1rem] bg-white/70 p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Correct Revision</p>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-800">
+                      {uploadState.earliestCorrectReview
+                        ? formatTimestamp(uploadState.earliestCorrectReview)
+                        : 'None'}
+                    </p>
+                  </div>
+                  <div className="rounded-[1rem] bg-white/70 p-4">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-rose-400" />
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Incorrect Revision</p>
+                    </div>
+                    <p className="mt-2 text-sm font-semibold text-slate-800">
+                      {uploadState.earliestIncorrectReview
+                        ? formatTimestamp(uploadState.earliestIncorrectReview)
+                        : 'None'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Overdue question lists */}
+                {uploadState.overdueCorrect.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 mb-2">
+                      Overdue Correct ({uploadState.overdueCorrect.length})
+                    </p>
+                    <ul className="space-y-1">
+                      {uploadState.overdueCorrect.map((q) => (
+                        <li key={q.question_id} className="rounded-xl bg-white/60 px-3 py-2 text-xs text-slate-700">
+                          {q.question_text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {uploadState.overdueIncorrect.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-rose-700 mb-2">
+                      Overdue Incorrect ({uploadState.overdueIncorrect.length})
+                    </p>
+                    <ul className="space-y-1">
+                      {uploadState.overdueIncorrect.map((q) => (
+                        <li key={q.question_id} className="rounded-xl bg-white/60 px-3 py-2 text-xs text-slate-700">
+                          {q.question_text}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
 
             {error ? <p className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p> : null}
 

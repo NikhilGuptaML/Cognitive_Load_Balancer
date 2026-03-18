@@ -53,7 +53,7 @@ async def startup_event() -> None:
 
 
 def _migrate_fsrs_columns() -> None:
-    """Add FSRS columns to existing questions table if missing (ALTER TABLE is a no-op for new DBs)."""
+    """Add spaced-repetition columns to existing questions table if missing."""
     import sqlite3
     db_path = Path(__file__).resolve().parent / "data" / "clb.sqlite3"
     if not db_path.exists():
@@ -65,9 +65,9 @@ def _migrate_fsrs_columns() -> None:
     existing = {row[1] for row in cursor.fetchall()}
     migrations = [
         ("next_review_at", "INTEGER"),
-        ("review_stability", "REAL DEFAULT 1.0"),
-        ("review_difficulty", "REAL DEFAULT 5.0"),
         ("review_count", "INTEGER DEFAULT 0"),
+        ("doc_id", "TEXT"),
+        ("was_correct", "INTEGER"),
     ]
     for col_name, col_type in migrations:
         if col_name not in existing:
