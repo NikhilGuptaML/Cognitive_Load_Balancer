@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { AdaptationLog } from '../components/AdaptationLog';
+import { CalibrationModal, TypingBaseline } from '../components/CalibrationModal';
 import { BandIndicator } from '../components/BandIndicator';
 import { FaceSignalCard } from '../components/FaceSignalCard';
 import { LoadGauge } from '../components/LoadGauge';
@@ -15,6 +16,11 @@ import { useFaceAnalyzer } from '../hooks/useFaceAnalyzer';
 import { useKeystrokeAnalyzer } from '../hooks/useKeystrokeAnalyzer';
 
 export function SessionPage() {
+  const [isCalibrating, setIsCalibrating] = useState(true);
+
+  const handleCalibrationComplete = (_baseline: TypingBaseline) => {
+    setIsCalibrating(false);
+  };
   const navigate = useNavigate();
   const { sessionId } = useParams<{ sessionId: string }>();
   const stored = window.localStorage.getItem('clb.activeSession');
@@ -31,7 +37,7 @@ export function SessionPage() {
   const [correctRevisionDate, setCorrectRevisionDate] = useState<Date | null>(null);
   const [incorrectRevisionDate, setIncorrectRevisionDate] = useState<Date | null>(null);
   const { metrics } = useKeystrokeAnalyzer(safeSessionId || null, Boolean(safeSessionId));
-  const face = useFaceAnalyzer(safeSessionId || null, Boolean(safeSessionId));
+  const face = useFaceAnalyzer(safeSessionId || null, Boolean(safeSessionId) && !isCalibrating);
 
   // Fetch revision schedule from backend
   const fetchRevisionSchedule = async () => {
@@ -78,6 +84,10 @@ export function SessionPage() {
         </div>
       </div>
     );
+  }
+
+  if (isCalibrating) {
+    return <CalibrationModal onComplete={handleCalibrationComplete} />;
   }
 
   return (
