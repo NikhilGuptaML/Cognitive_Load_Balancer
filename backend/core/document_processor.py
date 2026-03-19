@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,8 @@ import chromadb
 import fitz
 from llama_index.core.node_parser import TokenTextSplitter
 from sentence_transformers import SentenceTransformer
+
+logger = logging.getLogger(__name__)
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -23,7 +26,9 @@ _embedding_model: SentenceTransformer | None = None
 def get_embedding_model() -> SentenceTransformer:
     global _embedding_model
     if _embedding_model is None:
+        logger.info("Loading embedding model '%s' (first time, may take a moment)...", EMBED_MODEL_NAME)
         _embedding_model = SentenceTransformer(EMBED_MODEL_NAME)
+        logger.info("Embedding model loaded successfully.")
     return _embedding_model
 
 
@@ -51,16 +56,23 @@ class DocumentIndex:
 
 
 def index_document(file_path: str | Path, session_id: str) -> DocumentIndex:
+    logger.info("index_document START – file=%s, session=%s", file_path, session_id)
+
+    logger.info("Extracting text from PDF...")
     source_text = _extract_text(file_path).strip()
     if not source_text:
         raise ValueError("The uploaded document did not contain extractable text.")
+    logger.info("Extracted %d characters of text.", len(source_text))
 
+    logger.info("Chunking text...")
     splitter = TokenTextSplitter(chunk_size=512, chunk_overlap=50)
     chunks = [chunk.strip() for chunk in splitter.split_text(source_text) if chunk.strip()]
     if not chunks:
         raise ValueError("Document chunking produced no usable text segments.")
+    logger.info("Produced %d chunks.", len(chunks))
 
     collection_name = _sanitize_collection_name(f"session_{session_id}")
+    logger.info("Creating Chroma collection '%s'...", collection_name)
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     try:
         client.delete_collection(collection_name)
@@ -68,12 +80,16 @@ def index_document(file_path: str | Path, session_id: str) -> DocumentIndex:
         pass
     collection = client.create_collection(name=collection_name)
 
+    logger.info("Loading embedding model...")
     model = get_embedding_model()
+    logger.info("Encoding %d chunks...", len(chunks))
     embeddings = model.encode(chunks, normalize_embeddings=True).tolist()
+    logger.info("Embedding complete. Storing in Chroma...")
     ids = [f"{collection_name}_{index}" for index in range(len(chunks))]
     metadata = [{"chunk": index} for index in range(len(chunks))]
     collection.add(ids=ids, documents=chunks, embeddings=embeddings, metadatas=metadata)
 
+    logger.info("index_document DONE – %d chunks indexed.", len(chunks))
     return DocumentIndex(collection_name=collection_name, chroma_path=str(CHROMA_DIR), chunk_count=len(chunks))
 
 

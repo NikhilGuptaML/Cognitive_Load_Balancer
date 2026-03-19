@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from api.signal import router as signal_router
 from core.load_aggregator import load_aggregator
 from db.database import Base, engine
 
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # FIXED: Support configurable frontend origins while keeping sensible local defaults.
 ALLOWED_ORIGINS = [

@@ -90,6 +90,8 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
     }
     const timer = window.setTimeout(() => {
       setFeedback(null);
+      setQuestion(null);
+      setAnswer('');
       void fetchQuestion();
     }, 3000);
     return () => window.clearTimeout(timer);
@@ -158,28 +160,24 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
         {question?.options && (
           <div className="mt-5 flex flex-col gap-2">
             {Object.entries(question.options).map(([letter, text]) => (
-              <button
+              <div
                 key={letter}
-                type="button"
-                onClick={() => setAnswer(String(text))}
-                className={`flex items-start gap-3 rounded-xl p-3 shadow-sm text-left transition ${
-                  answer === String(text) ? 'bg-indigo-50 ring-2 ring-indigo-300' : 'bg-slate-50 hover:bg-slate-100'
-                }`}
+                className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 shadow-sm text-left"
               >
                 <span className="font-bold text-indigo-600">{letter}:</span>
                 <span className="text-slate-800">{text}</span>
-              </button>
+              </div>
             ))}
           </div>
         )}
       </div>
 
-      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer (type the option text)</label>
+      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer (type the option letter or text)</label>
       <input
         type="text"
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Type the full option text or click an option above..."
+        placeholder="Type A, B, C, or D..."
         className="mt-3 w-full rounded-2xl border border-slate-300 bg-white p-4 text-lg font-medium text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
         onKeyDown={(e) => { if (e.key === 'Enter' && answer.trim()) void submitAnswer(); }}
       />

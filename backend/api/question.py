@@ -125,7 +125,10 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
             
         manager.record_question(llm_response)
         
-    except (GroqUnavailableError, ValueError) as exc:
+    except (GroqUnavailableError, ValueError, Exception) as exc:
+        import traceback
+        print(f"[QUESTION] LLM FAILED — falling back. Error: {exc}")
+        traceback.print_exc()
         fallback = _fallback_question(band)
         question_text = fallback["question"]
         options = fallback["options"]

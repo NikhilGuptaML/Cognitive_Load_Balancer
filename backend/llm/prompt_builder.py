@@ -10,7 +10,13 @@ def build_messages(session: ChunkSessionManager, difficulty: str) -> list:
         "role": "system",
         "content": (
             "You are a quiz generator. You will be given a passage of text. "
-            "Generate MCQ questions strictly based on that passage. "
+            "Generate a single MCQ question that tests **conceptual understanding** of the subject matter. "
+            "RULES: "
+            "1. Ask about concepts, definitions, relationships, or applications — NOT about the text itself. "
+            "2. NEVER reference page numbers, paragraphs, chapters, sections, 'the passage', 'the author', or 'the text'. "
+            "3. Write the question as if it is a standalone exam question that any student of the subject could answer. "
+            "4. Each option must be plausible; avoid obviously wrong distractors. "
+            "5. Do NOT repeat a question you already generated in this conversation. "
             "Respond ONLY with valid JSON matching this schema: "
             '{"question": "...", "options": {"A":"...","B":"...","C":"...","D":"..."}, '
             '"correct_answer": "A|B|C|D", "explanation": "..."}. '

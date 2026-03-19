@@ -67,11 +67,13 @@ class GroqClient:
                     "model": model,
                     "messages": messages,
                     "temperature": temperature,
-                    "response_format": {"type": "json_object"},
                     "stream": False
                 }
+                # FIXED: Groq API rejects response_format + tools together.
                 if tools:
                     kwargs["tools"] = tools
+                else:
+                    kwargs["response_format"] = {"type": "json_object"}
 
                 completion = self.client.chat.completions.create(**kwargs)
                 
