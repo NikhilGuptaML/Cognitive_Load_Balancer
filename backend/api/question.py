@@ -48,7 +48,7 @@ def _fallback_question(band: str) -> dict:
             "C": "Historical context",
             "D": "Technical implementation"
         },
-        "correct_answer": "A",
+        "correct_answer": "Core concept application",
         "explanation": "This is a fallback generated question because the model service is unavailable."
     }
 

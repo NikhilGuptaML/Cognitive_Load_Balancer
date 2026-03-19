@@ -19,7 +19,7 @@ def build_messages(session: ChunkSessionManager, difficulty: str) -> list:
             "5. Do NOT repeat a question you already generated in this conversation. "
             "Respond ONLY with valid JSON matching this schema: "
             '{"question": "...", "options": {"A":"...","B":"...","C":"...","D":"..."}, '
-            '"correct_answer": "A|B|C|D", "explanation": "..."}. '
+            '"correct_answer": "the full text of the correct option, copied exactly from options", "explanation": "..."}. '
             "No preamble, no markdown, no extra text. "
             f"Difficulty level: {difficulty}."
         )
