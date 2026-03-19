@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 from core.load_aggregator import band_for_score
-from llm.prompt_builder import render_question_prompt
+# FIXED: Removed dead import of nonexistent render_question_prompt.
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,4 @@ def get_band_config(band: str) -> BandConfig:
     return BAND_CONFIGS.get(band, BAND_CONFIGS["OPTIMAL"])
 
 
-def build_question_prompt(band: str, context_chunks: list[str], history: list[dict]) -> str:
-    config = get_band_config(band)
-    return render_question_prompt(band=band, config=asdict(config), context_chunks=context_chunks, history=history)
+# FIXED: Removed dead build_question_prompt function that called nonexistent render_question_prompt.

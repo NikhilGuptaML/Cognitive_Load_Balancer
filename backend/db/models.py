@@ -38,6 +38,7 @@ class Document(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     sessions = relationship("Session", back_populates="document")
+    questions = relationship("Question", back_populates="document")
 
 
 class LoadEvent(Base):
@@ -61,13 +62,24 @@ class Question(Base):
 
     id = Column(String, primary_key=True)
     session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    doc_id = Column(String, ForeignKey("documents.id"), nullable=True, index=True)
     text = Column(Text, nullable=False)
     band = Column(String, nullable=False, index=True)
     load_at_time = Column(Float, nullable=False)
     asked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     hint = Column(Text, nullable=True)
+    
+    options = Column(JSON, nullable=True)                 
+    correct_answer = Column(String, nullable=True)        
+    explanation = Column(Text, nullable=True)
+
+    # Spaced-repetition scheduling fields
+    next_review_at = Column(Integer, nullable=True)       # Unix timestamp of next scheduled review
+    was_correct = Column(Boolean, nullable=True)          # Whether the latest answer was correct
+    review_count = Column(Integer, default=0)             # how many times this question has been reviewed
 
     session = relationship("Session", back_populates="questions")
+    document = relationship("Document", back_populates="questions")
     answers = relationship("Answer", back_populates="question", cascade="all, delete-orphan")
 
 

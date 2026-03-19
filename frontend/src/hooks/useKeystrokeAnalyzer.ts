@@ -16,6 +16,22 @@ export type KeystrokeMetrics = {
 
 const WINDOW_MS = 5000;
 
+type StoredBaseline = { ikiVariance: number; wpm: number; backspaceRate: number } | null;
+
+function readBaseline(): StoredBaseline {
+  try {
+    const raw = window.localStorage.getItem('clb.typingBaseline');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { ikiVariance: number; wpm: number; backspaceRate: number };
+    if (typeof parsed.ikiVariance === 'number' && typeof parsed.wpm === 'number' && typeof parsed.backspaceRate === 'number') {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -29,12 +45,13 @@ function variance(values: number[]) {
 }
 
 export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
+  const baseline = useRef<StoredBaseline>(readBaseline());
   const eventsRef = useRef<KeyEventPoint[]>([]);
   const [metrics, setMetrics] = useState<KeystrokeMetrics>({
     ikiVariance: 0,
     wpm: 0,
     backspaceRate: 0,
-    rawScore: 0
+    rawScore: 50 // FIXED: Cold-start default should be 50 (neutral), not 0.
   });
 
   useEffect(() => {
@@ -50,6 +67,12 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
 
       const points = eventsRef.current;
       const intervals = points.slice(1).map((entry, index) => entry.timestamp - points[index].timestamp);
+      
+      if (points.length < 3) {
+        setMetrics({ ikiVariance: 0, wpm: 40, backspaceRate: 0, rawScore: 50 });
+        return;
+      }
+
       const ikiVariance = variance(intervals);
       const nonControlKeys = points.filter((entry) => entry.key.length === 1 || entry.key === 'Backspace');
       const charactersTyped = nonControlKeys.filter((entry) => entry.key !== 'Backspace').length;
@@ -58,9 +81,13 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
       const backspaces = nonControlKeys.filter((entry) => entry.key === 'Backspace').length;
       const backspaceRate = nonControlKeys.length ? backspaces / nonControlKeys.length : 0;
 
-      const ikiContribution = clamp((ikiVariance / 30000) * 40, 0, 40);
-      const wpmContribution = clamp(((45 - Math.min(wpm, 45)) / 45) * 40, 0, 40);
-      const backspaceContribution = clamp(backspaceRate * 20, 0, 20);
+      const bl = baseline.current;
+      const ikiCeiling = bl ? bl.ikiVariance * 4 : 30000;
+      const ikiContribution = clamp((ikiVariance / Math.max(ikiCeiling, 1)) * 40, 0, 40);
+      const wpmFloor = bl ? bl.wpm : 45;
+      const wpmContribution = clamp(((wpmFloor - Math.min(wpm, wpmFloor)) / Math.max(wpmFloor, 1)) * 40, 0, 40);
+      const bsNorm = bl ? Math.max(bl.backspaceRate, 0.01) : 0.05;
+      const backspaceContribution = clamp((backspaceRate / bsNorm) * 20, 0, 20);
       const rawScore = clamp(ikiContribution + wpmContribution + backspaceContribution, 0, 100);
 
       setMetrics({

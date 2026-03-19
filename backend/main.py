@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -12,11 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.answer import router as answer_router
 from api.document import router as document_router
 from api.question import router as question_router
+from api.reviews import router as reviews_router
 from api.session import router as session_router
 from api.signal import router as signal_router
 from core.load_aggregator import load_aggregator
 from db.database import Base, engine
 
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 # FIXED: Support configurable frontend origins while keeping sensible local defaults.
 ALLOWED_ORIGINS = [
@@ -40,13 +44,42 @@ app.include_router(session_router)
 app.include_router(question_router)
 app.include_router(answer_router)
 app.include_router(signal_router)
+app.include_router(reviews_router)
 
 
 @app.on_event("startup")
 async def startup_event() -> None:
     Base.metadata.create_all(bind=engine)
+    _migrate_fsrs_columns()
     for relative in ["data", "data/uploads", "data/chroma"]:
         Path(__file__).resolve().parent.joinpath(relative).mkdir(parents=True, exist_ok=True)
+
+
+def _migrate_fsrs_columns() -> None:
+    """Add spaced-repetition columns to existing questions table if missing."""
+    import sqlite3
+    db_path = Path(__file__).resolve().parent / "data" / "clb.sqlite3"
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    # Get existing column names
+    cursor.execute("PRAGMA table_info(questions)")
+    existing = {row[1] for row in cursor.fetchall()}
+    migrations = [
+        ("next_review_at", "INTEGER"),
+        ("review_count", "INTEGER DEFAULT 0"),
+        ("doc_id", "TEXT"),
+        ("was_correct", "INTEGER"),
+        ("options", "JSON"),
+        ("correct_answer", "TEXT"),
+        ("explanation", "TEXT"),
+    ]
+    for col_name, col_type in migrations:
+        if col_name not in existing:
+            cursor.execute(f"ALTER TABLE questions ADD COLUMN {col_name} {col_type}")
+    conn.commit()
+    conn.close()
 
 
 @app.get("/health")

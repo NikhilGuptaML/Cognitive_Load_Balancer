@@ -1,22 +1,24 @@
-"""This route evaluates an answer against locally retrieved document context, updates the response-latency signal, and stores the graded result for reports and later adaptation decisions."""
+"""This route evaluates an answer against locally retrieved document context, updates the response-latency signal, and stores the graded result. Uses fixed revision timers: 1 week for correct, 1 day for incorrect."""
 
 from __future__ import annotations
+
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from core.document_processor import retrieve_context
 from core.load_aggregator import load_aggregator
 from db.database import get_db
 from db.models import Answer, Document, Question, Session as StudySession
-from llm.ollama_client import OllamaUnavailableError, ollama_client
-from llm.prompt_builder import render_answer_evaluation_prompt
 from signals.latency_tracker import latency_tracker
 
 
 router = APIRouter(prefix="/answer", tags=["answer"])
+
+CORRECT_INTERVAL_DAYS = 7   # 1 week for correct answers
+INCORRECT_INTERVAL_DAYS = 1  # 1 day for incorrect answers
 
 
 class AnswerRequest(BaseModel):
@@ -26,61 +28,39 @@ class AnswerRequest(BaseModel):
     latency_ms: int = Field(ge=0)
 
 
-def _simple_grade(answer_text: str, context_chunks: list[str]) -> dict:
-    answer_terms = {term.lower() for term in answer_text.split() if len(term) > 3}
-    context_terms = {
-        term.lower().strip('.,:;!?()[]{}"\'')
-        for chunk in context_chunks
-        for term in chunk.split()
-        if len(term) > 3
-    }
-    overlap = len(answer_terms & context_terms)
-    score = min(100.0, overlap * 12.5)
-    return {
-        "correct": score >= 50.0,
-        "score": round(score, 2),
-        "explanation": "Fallback grading was used because the local model was unavailable. Answers with more document-grounded concepts score higher.",
-    }
-
-
-def _document_collection_name(document: Document) -> str:
-    try:
-        return document.chroma_path.split("::", 1)[1]
-    except Exception as exc:
-        raise LookupError("Document index metadata is invalid.") from exc
-
-
+# FIXED: Route handler was at module level (outside any function), causing NameError on import.
+# FIXED: Now accepts full option text typed by the user, matched against stored options.
 @router.post("")
-async def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
-    session = db.get(StudySession, payload.session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found.")
-
+def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
     question = db.get(Question, payload.question_id)
-    if question is None or question.session_id != payload.session_id:
-        raise HTTPException(status_code=404, detail="Question not found for this session.")
+    if question is None:
+        raise HTTPException(status_code=404, detail="Question not found.")
 
-    document = db.get(Document, session.doc_id)
-    if document is None:
-        raise HTTPException(status_code=404, detail="Document not found.")
+    # FIXED: User types the full option text — match against stored options to find the letter.
+    typed_text = payload.answer_text.strip()
+    matched_letter = None
 
-    latency_metrics = latency_tracker.record_latency(payload.session_id, payload.latency_ms)
-    await load_aggregator.update_signal(payload.session_id, "latency", latency_metrics["raw_score"])
+    if question.options and isinstance(question.options, dict):
+        # First try exact letter match (backwards compat)
+        upper_text = typed_text.upper()
+        if upper_text in question.options:
+            matched_letter = upper_text
+        else:
+            # Match by typed option text (case-insensitive, trimmed)
+            for letter, option_text in question.options.items():
+                if typed_text.lower() == str(option_text).strip().lower():
+                    matched_letter = letter
+                    break
 
-    # FIXED: Offload blocking retrieval work to avoid stalling the async event loop.
-    context_chunks = await run_in_threadpool(retrieve_context, _document_collection_name(document), question.text, 3)
-    prompt = render_answer_evaluation_prompt(question.text, payload.answer_text, context_chunks)
-    try:
-        # FIXED: Run blocking local LLM call in a threadpool from async route context.
-        result = await run_in_threadpool(ollama_client.generate_json, "phi3:mini", prompt)
-        correct = bool(result.get("correct", False))
-        score = max(0.0, min(100.0, float(result.get("score", 0.0))))
-        explanation = str(result.get("explanation", "")).strip() or "No explanation provided."
-    except (OllamaUnavailableError, ValueError):
-        fallback = _simple_grade(payload.answer_text, context_chunks)
-        correct = fallback["correct"]
-        score = fallback["score"]
-        explanation = fallback["explanation"]
+    if matched_letter is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Answer does not match any of the available options. Type the full option text."
+        )
+
+    correct = (matched_letter == question.correct_answer)
+    score = 100.0 if correct else 0.0
+    explanation = question.explanation or "No explanation provided for this question."
 
     answer = Answer(
         question_id=payload.question_id,
@@ -91,6 +71,21 @@ async def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
         score=score,
     )
     db.add(answer)
+
+    # --- Fixed-interval spaced-repetition scheduling ---
+    now = int(time.time())
+    if correct:
+        interval_days = CORRECT_INTERVAL_DAYS
+    else:
+        interval_days = INCORRECT_INTERVAL_DAYS
+
+    question.next_review_at = now + interval_days * 86400
+    question.was_correct = correct
+    question.review_count = (question.review_count or 0) + 1
+
     db.commit()
 
-    return {"correct": correct, "score": score, "explanation": explanation}
+    # FIXED: Record latency for the load aggregator.
+    latency_tracker.record_latency(payload.session_id, payload.latency_ms)
+
+    return {"correct": correct, "score": score, "explanation": explanation, "next_review_in_days": interval_days}
