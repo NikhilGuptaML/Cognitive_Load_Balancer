@@ -36,30 +36,20 @@ def submit_answer(payload: AnswerRequest, db: Session = Depends(get_db)):
     if question is None:
         raise HTTPException(status_code=404, detail="Question not found.")
 
-    # FIXED: User types the full option text — match against stored options to find the letter.
-    typed_text = payload.answer_text.strip()
-    matched_letter = None
+    # Full-text answer comparison (case-insensitive, trimmed)
+    typed_text = payload.answer_text.strip().lower()
+    correct_text = (question.correct_answer or "").strip().lower()
 
-    if question.options and isinstance(question.options, dict):
-        # First try exact letter match (backwards compat)
-        upper_text = typed_text.upper()
-        if upper_text in question.options:
-            matched_letter = upper_text
-        else:
-            # Match by typed option text (case-insensitive, trimmed)
-            for letter, option_text in question.options.items():
-                if typed_text.lower() == str(option_text).strip().lower():
-                    matched_letter = letter
-                    break
-
-    if matched_letter is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Answer does not match any of the available options. Type the full option text."
-        )
-
-    correct = (matched_letter == question.correct_answer)
-    score = 100.0 if correct else 0.0
+    if typed_text == correct_text:
+        correct = True
+        score = 100.0
+    elif typed_text in correct_text or correct_text in typed_text:
+        # Fuzzy partial credit — submitted text is a substring of the correct answer or vice versa
+        correct = False
+        score = 50.0
+    else:
+        correct = False
+        score = 0.0
     explanation = question.explanation or "No explanation provided for this question."
 
     answer = Answer(
