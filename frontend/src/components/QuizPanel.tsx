@@ -162,22 +162,23 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
             {Object.entries(question.options).map(([letter, text]) => (
               <div
                 key={letter}
-                className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 shadow-sm text-left"
+                className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 shadow-sm text-left select-none opacity-90"
               >
                 <span className="font-bold text-indigo-600">{letter}:</span>
                 <span className="text-slate-800">{text}</span>
               </div>
             ))}
+            <p className="mt-1 text-xs font-medium text-indigo-500 italic">Type the full answer text, not the letter</p>
           </div>
         )}
       </div>
 
-      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer (type the option letter or text)</label>
+      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your Answer</label>
       <input
         type="text"
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Type A, B, C, or D..."
+        placeholder="Type the full answer text..."
         className="mt-3 w-full rounded-2xl border border-slate-300 bg-white p-4 text-lg font-medium text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
         onKeyDown={(e) => { if (e.key === 'Enter' && answer.trim()) void submitAnswer(); }}
       />
