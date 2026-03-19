@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from llm.prompt_builder import build_messages, get_chunk_tool
+from llm.prompt_builder import build_messages
 from core.difficulty_controller import get_band
 from core.document_processor import get_all_chunks
 from core.load_aggregator import load_aggregator
@@ -104,17 +104,10 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
 
     try:
         messages = build_messages(manager, band)
-        tools = [get_chunk_tool()]
         
-        llm_response = await run_in_threadpool(groq_client.generate_json, "llama-3.3-70b-versatile", messages, tools=tools)
+        # Use json_object response format — no tools (Groq rejects response_format + tools together)
+        llm_response = await run_in_threadpool(groq_client.generate_json, "llama-3.3-70b-versatile", messages)
         
-        if "tool_calls" in llm_response:
-            for tool_call in llm_response["tool_calls"]:
-                if tool_call.function.name == "retrieve_next_chunk":
-                    manager.advance_to_next_chunk()
-            messages = build_messages(manager, band)
-            llm_response = await run_in_threadpool(groq_client.generate_json, "llama-3.3-70b-versatile", messages)
-            
         question_text = str(llm_response.get("question", "")).strip()
         options = llm_response.get("options", {})
         correct_answer = str(llm_response.get("correct_answer", "")).strip()
@@ -126,9 +119,8 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
         manager.record_question(llm_response)
         
     except (GroqUnavailableError, ValueError, Exception) as exc:
-        import traceback
-        print(f"[QUESTION] LLM FAILED — falling back. Error: {exc}")
-        traceback.print_exc()
+        import logging
+        logging.getLogger(__name__).error("LLM question generation failed, using fallback: %s", exc, exc_info=True)
         fallback = _fallback_question(band)
         question_text = fallback["question"]
         options = fallback["options"]
