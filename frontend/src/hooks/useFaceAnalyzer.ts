@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
+import { getApiUrl } from '../apiConfig';
 
 // Same 6-point eye landmark indices used in the backend face_processor.py
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
@@ -288,7 +289,7 @@ export function useFaceAnalyzer(
     const interval = window.setInterval(async () => {
       const current = metricsRef.current;
       try {
-        await fetch('/signal/face', {
+        await fetch(getApiUrl('/signal/face'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

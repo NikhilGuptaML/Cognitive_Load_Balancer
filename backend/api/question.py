@@ -1,4 +1,4 @@
-"""This route selects the current difficulty band, retrieves the most relevant local document context, and generates the next question through Ollama with a deterministic fallback when the model is unavailable."""
+"""This route selects the current difficulty band, retrieves the most relevant local document context, and generates the next question through a local Ollama model with a deterministic fallback when the model is unavailable."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from core.load_aggregator import load_aggregator
 from core.chunk_manager import ChunkSessionManager
 from db.database import get_db
 from db.models import Document, Question, Session as StudySession
-from llm.groq_client import GroqUnavailableError, groq_client
+from llm.ollama_client import OllamaUnavailableError, ollama_client
 from signals.latency_tracker import latency_tracker
 
 
@@ -105,8 +105,7 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
     try:
         messages = build_messages(manager, band)
         
-        # Use json_object response format — no tools (Groq rejects response_format + tools together)
-        llm_response = await run_in_threadpool(groq_client.generate_json, "llama-3.3-70b-versatile", messages)
+        llm_response = await run_in_threadpool(ollama_client.generate_json, messages)
         
         question_text = str(llm_response.get("question", "")).strip()
         options = llm_response.get("options", {})
@@ -118,7 +117,7 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
             
         manager.record_question(llm_response)
         
-    except (GroqUnavailableError, ValueError, Exception) as exc:
+    except (OllamaUnavailableError, ValueError, Exception) as exc:
         import logging
         logging.getLogger(__name__).error("LLM question generation failed, using fallback: %s", exc, exc_info=True)
         fallback = _fallback_question(band)

@@ -1,6 +1,7 @@
 /* This hook watches typing behavior in a rolling five-second window, converts the signal into a normalized cognitive-load subscore, and posts it back to the backend at a fixed cadence during the active session. */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { getApiUrl } from '../apiConfig';
 
 type KeyEventPoint = {
   timestamp: number;
@@ -116,7 +117,7 @@ export function useKeystrokeAnalyzer(sessionId: string | null, enabled = true) {
     const interval = window.setInterval(async () => {
       const current = metricsRef.current;
       try {
-        await fetch('/signal/keystroke', {
+        await fetch(getApiUrl('/signal/keystroke'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

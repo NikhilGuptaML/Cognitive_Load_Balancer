@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getApiUrl } from '../apiConfig';
 
 type QuestionResponse = {
   question_id: string;
@@ -57,7 +58,7 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
   const fetchQuestion = async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(`/question?session_id=${sessionId}`);
+      const response = await fetch(getApiUrl(`/question?session_id=${sessionId}`));
       if (!response.ok) {
         throw new Error('Question request failed');
       }
@@ -106,7 +107,7 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
     const latencyMs = Date.now() - appearedAtRef.current;
     setIsLoading(true);
     try {
-      const response = await fetch('/answer', {
+      const response = await fetch(getApiUrl('/answer'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

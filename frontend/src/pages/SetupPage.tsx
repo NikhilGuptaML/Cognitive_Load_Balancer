@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getApiUrl } from '../apiConfig';
 
 type OverdueQuestion = {
   question_id: string;
@@ -60,7 +61,7 @@ export function SetupPage() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('/document/upload', {
+      const response = await fetch(getApiUrl('/document/upload'), {
         method: 'POST',
         body: formData
       });
@@ -94,7 +95,7 @@ export function SetupPage() {
     setError(null);
     setIsBusy(true);
     try {
-      const response = await fetch('/session/start', {
+      const response = await fetch(getApiUrl('/session/start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, doc_id: uploadState.docId, pomodoro_length: pomodoroLength })

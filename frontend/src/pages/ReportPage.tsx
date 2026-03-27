@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { getApiUrl } from '../apiConfig';
 
 type SessionReport = {
   avg_load: number;
@@ -25,7 +26,7 @@ export function ReportPage() {
     const loadReport = async () => {
       setIsLoading(true);
       try {
-        const response = await fetch(`/session/report?session_id=${sessionId}`);
+        const response = await fetch(getApiUrl(`/session/report?session_id=${sessionId}`));
         if (!response.ok) {
           throw new Error('Report request failed');
         }

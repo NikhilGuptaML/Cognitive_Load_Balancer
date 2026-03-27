@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { getApiUrl } from '../apiConfig';
 
 import { AdaptationLog } from '../components/AdaptationLog';
 import { CalibrationModal, TypingBaseline } from '../components/CalibrationModal';
@@ -45,8 +46,8 @@ export function SessionPage() {
     if (!safeSessionId) return;
     try {
       const url = docId
-        ? `/reviews?session_id=${safeSessionId}&doc_id=${docId}`
-        : `/reviews?session_id=${safeSessionId}`;
+        ? getApiUrl(`/reviews?session_id=${safeSessionId}&doc_id=${docId}`)
+        : getApiUrl(`/reviews?session_id=${safeSessionId}`);
       const response = await fetch(url);
       if (!response.ok) return;
       const data = await response.json();

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cognitive Load Balancer</string>
+    <string name="title_activity_main">Cognitive Load Balancer</string>
+    <string name="package_name">com.clb.cognitiveloadbalancer</string>
+    <string name="custom_url_scheme">com.clb.cognitiveloadbalancer</string>
+</resources>

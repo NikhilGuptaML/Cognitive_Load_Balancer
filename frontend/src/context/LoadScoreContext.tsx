@@ -3,6 +3,7 @@
 import { createContext, PropsWithChildren, useContext, useMemo, useState } from 'react';
 
 import { useWebSocket } from '../hooks/useWebSocket';
+import { getWsUrl } from '../apiConfig';
 
 type LoadPayload = {
   score: number;
@@ -24,10 +25,7 @@ const LoadScoreContext = createContext<LoadScoreContextValue | undefined>(undefi
 export function LoadScoreProvider({ children, sessionId }: PropsWithChildren<{ sessionId: string }>) {
   const [state, setState] = useState<LoadPayload>({ score: 0, band: 'FLOW', signalsActive: [] });
   const websocketUrl = useMemo(() => {
-    // FIXED: Build websocket URL from runtime host/protocol so non-localhost demos work.
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const backendHost = `${window.location.hostname}:8000`;
-    return `${protocol}://${backendHost}/ws/load/${sessionId}`;
+    return getWsUrl(`/ws/load/${sessionId}`);
   }, [sessionId]);
 
   const { status, lastMessage } = useWebSocket<LoadPayload>(websocketUrl, {

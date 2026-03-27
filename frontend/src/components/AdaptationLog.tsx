@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { getApiUrl } from '../apiConfig';
 
 type ReportPoint = {
   timestamp: string;
@@ -26,7 +27,7 @@ export function AdaptationLog({ sessionId }: { sessionId: string }) {
 
     const fetchReport = async () => {
       try {
-        const response = await fetch(`/session/report?session_id=${sessionId}`);
+        const response = await fetch(getApiUrl(`/session/report?session_id=${sessionId}`));
         if (!response.ok) {
           return;
         }
