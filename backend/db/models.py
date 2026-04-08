@@ -26,6 +26,7 @@ class Session(Base):
     questions = relationship("Question", back_populates="session", cascade="all, delete-orphan")
     answers = relationship("Answer", back_populates="session", cascade="all, delete-orphan")
     band_changes = relationship("BandChange", back_populates="session", cascade="all, delete-orphan")
+    self_report_ratings = relationship("SelfReportRating", back_populates="session", cascade="all, delete-orphan")
 
 
 class Document(Base):
@@ -110,3 +111,24 @@ class BandChange(Base):
     reason = Column(String, nullable=False)
 
     session = relationship("Session", back_populates="band_changes")
+
+
+class SelfReportRating(Base):
+    """Stores a single NASA-TLX self-report snapshot submitted by the learner."""
+
+    __tablename__ = "self_report_ratings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    question_number = Column(Integer, nullable=False)  # after which answered question this was triggered
+    mental_demand = Column(Integer, nullable=False)
+    physical_demand = Column(Integer, nullable=False)
+    temporal_demand = Column(Integer, nullable=False)
+    performance = Column(Integer, nullable=False)
+    effort = Column(Integer, nullable=False)
+    frustration = Column(Integer, nullable=False)
+    single_scale_overall = Column(Integer, nullable=False)
+    composite_load_at_time = Column(Float, nullable=False, default=0.0)  # CLB composite score snapshot
+
+    session = relationship("Session", back_populates="self_report_ratings")

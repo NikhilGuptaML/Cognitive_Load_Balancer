@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { NasaTlxModal } from './NasaTlxModal';
 
 type QuestionResponse = {
   question_id: string;
@@ -26,6 +27,9 @@ const BAND_BADGES: Record<string, string> = {
   OVERLOADED: 'bg-orange-100 text-orange-900',
   CRISIS: 'bg-rose-100 text-rose-900'
 };
+
+/** Show the NASA-TLX modal after every Nth answered question. */
+const NASA_TLX_INTERVAL = 5;
 
 function FeedbackModal({ feedback }: { feedback: NonNullable<FeedbackState> }) {
   return (
@@ -53,6 +57,13 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const appearedAtRef = useRef<number>(Date.now());
+
+  // NASA-TLX tracking
+  const [answerCount, setAnswerCount] = useState(0);
+  const [showTlx, setShowTlx] = useState(false);
+  const [tlxQuestionNumber, setTlxQuestionNumber] = useState(0);
+  // Ref used to re-trigger the feedback auto-advance effect after TLX closes
+  const [feedbackKey, setFeedbackKey] = useState(0);
 
   const fetchQuestion = async () => {
     setIsLoading(true);
@@ -85,7 +96,8 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
   }, [sessionId]);
 
   useEffect(() => {
-    if (!feedback) {
+    if (!feedback || showTlx) {
+      // Don't advance while feedback is absent OR while TLX modal is open
       return undefined;
     }
     const timer = window.setTimeout(() => {
@@ -95,7 +107,9 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
       void fetchQuestion();
     }, 3000);
     return () => window.clearTimeout(timer);
-  }, [feedback]);
+  // feedbackKey is intentionally included so closing TLX restarts the 3-second window
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedback, showTlx, feedbackKey]);
 
   const badgeClass = useMemo(() => BAND_BADGES[question?.band ?? 'OPTIMAL'] ?? BAND_BADGES.OPTIMAL, [question?.band]);
 
@@ -123,6 +137,15 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
 
       const payload = await response.json();
       setFeedback(payload);
+
+      // Increment answer count and trigger NASA-TLX modal if interval reached
+      const newCount = answerCount + 1;
+      setAnswerCount(newCount);
+      if (newCount % NASA_TLX_INTERVAL === 0) {
+        setTlxQuestionNumber(newCount);
+        setShowTlx(true);
+      }
+
       if (payload.correct) {
         onCorrect?.();
       } else {
@@ -149,6 +172,11 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
             <span className="rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">Review</span>
           )}
           {question ? <span className={`rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`}>{question.band}</span> : null}
+          {answerCount > 0 && (
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500">
+              Q {answerCount}
+            </span>
+          )}
         </div>
       </div>
 
@@ -201,6 +229,19 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
         </button>
       </div>
       {feedback ? <FeedbackModal feedback={feedback} /> : null}
+
+      {/* NASA-TLX modal — rendered as fixed overlay, does not unmount the WS connection */}
+      {showTlx && (
+        <NasaTlxModal
+          sessionId={sessionId}
+          questionNumber={tlxQuestionNumber}
+          onClose={() => {
+            setShowTlx(false);
+            // Bump feedbackKey so the auto-advance effect re-runs with a fresh 3-second window
+            setFeedbackKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
