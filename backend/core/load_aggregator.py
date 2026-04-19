@@ -11,7 +11,7 @@ from fastapi import WebSocket
 
 
 ALPHA = 0.3
-WEIGHTS = {"keystroke": 0.50, "facial": 0.35, "latency": 0.15}
+WEIGHTS = {"keystroke": 0.40, "facial": 0.30, "latency": 0.10, "accuracy": 0.20}
 
 BANDS = {
     (0, 25): "FLOW",
@@ -58,6 +58,7 @@ class SessionSignalState:
     keystroke: float | None = None
     facial: float | None = None
     latency: float | None = None
+    accuracy: float | None = None
     band: str = "FLOW"
     score: float = 0.0
     smoothed_score: float = 50.0  # FIXED: Per-session EWMA instead of global
@@ -73,6 +74,7 @@ class SessionSignalState:
                     "keystroke": self.keystroke,
                     "facial": self.facial,
                     "latency": self.latency,
+                    "accuracy": self.accuracy,
                 }.items()
                 if value is not None
             ],
@@ -81,6 +83,7 @@ class SessionSignalState:
                 "keystroke": self.keystroke,
                 "facial": self.facial,
                 "latency": self.latency,
+                "accuracy": self.accuracy,
             },
         }
 
@@ -119,12 +122,15 @@ class LoadAggregator:
                 state.facial = value
             elif signal_name == "latency":
                 state.latency = value
+            elif signal_name == "accuracy":
+                state.accuracy = value
 
             snapshot = compute_load_score(
                 {
                     "keystroke": state.keystroke,
                     "facial": state.facial,
                     "latency": state.latency,
+                    "accuracy": state.accuracy,
                 }
             )
             # Apply EWMA smoothing before setting the state's composite score

@@ -136,7 +136,8 @@ async def get_question(session_id: str = Query(...), topic: str = Query(default=
         load_at_time=snapshot["score"],
         options=options,
         correct_answer=correct_answer,
-        explanation=explanation
+        explanation=explanation,
+        chunk_index=manager.current_chunk_index,
     )
     db.add(question)
     db.commit()

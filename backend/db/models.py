@@ -75,6 +75,8 @@ class Question(Base):
     correct_answer = Column(String, nullable=True)        
     explanation = Column(Text, nullable=True)
 
+    chunk_index = Column(Integer, nullable=True)          # which chunk this question was generated from
+
     # Spaced-repetition scheduling fields
     next_review_at = Column(Integer, nullable=True)       # Unix timestamp of next scheduled review
     was_correct = Column(Boolean, nullable=True)          # Whether the latest answer was correct
@@ -95,6 +97,9 @@ class Answer(Base):
     latency_ms = Column(Integer, nullable=False)
     correct = Column(Boolean, nullable=False)
     score = Column(Float, nullable=False)
+    verdict = Column(String, nullable=True)       # "correct", "partially_correct", "incorrect"
+    reasoning = Column(Text, nullable=True)       # LLM explanation of grading decision
+    suggestions = Column(Text, nullable=True)     # LLM study suggestion for the student
 
     question = relationship("Question", back_populates="answers")
     session = relationship("Session", back_populates="answers")

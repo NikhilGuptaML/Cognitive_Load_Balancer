@@ -56,6 +56,7 @@ async def startup_event() -> None:
     Base.metadata.create_all(bind=engine)
     _migrate_fsrs_columns()
     _migrate_participant_tables()
+    _migrate_answer_eval_columns()
     for relative in ["data", "data/uploads", "data/chroma"]:
         Path(__file__).resolve().parent.joinpath(relative).mkdir(parents=True, exist_ok=True)
 
@@ -110,6 +111,34 @@ def _migrate_participant_tables() -> None:
     existing = {row[1] for row in cursor.fetchall()}
     if "participant_id" not in existing:
         cursor.execute("ALTER TABLE load_events ADD COLUMN participant_id INTEGER REFERENCES research_participants(id)")
+    conn.commit()
+    conn.close()
+
+
+def _migrate_answer_eval_columns() -> None:
+    """Add LLM evaluation columns to answers table and chunk_index to questions if missing."""
+    import sqlite3
+    db_path = Path(__file__).resolve().parent / "data" / "clb.sqlite3"
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    # --- answers table ---
+    cursor.execute("PRAGMA table_info(answers)")
+    answer_cols = {row[1] for row in cursor.fetchall()}
+    answer_migrations = [
+        ("verdict", "TEXT"),
+        ("reasoning", "TEXT"),
+        ("suggestions", "TEXT"),
+    ]
+    for col_name, col_type in answer_migrations:
+        if col_name not in answer_cols:
+            cursor.execute(f"ALTER TABLE answers ADD COLUMN {col_name} {col_type}")
+    # --- questions table ---
+    cursor.execute("PRAGMA table_info(questions)")
+    question_cols = {row[1] for row in cursor.fetchall()}
+    if "chunk_index" not in question_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN chunk_index INTEGER")
     conn.commit()
     conn.close()
 
