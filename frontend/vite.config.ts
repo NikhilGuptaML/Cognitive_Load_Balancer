@@ -14,7 +14,9 @@ export default defineConfig({
       '/answer': 'http://localhost:8000',
       '/signal': 'http://localhost:8000',
       '/health': 'http://localhost:8000',
-      '/reviews': 'http://localhost:8000'
+      '/reviews': 'http://localhost:8000',
+      '/simulation': 'http://localhost:8000',
+      '/participants': 'http://localhost:8000'
     }
   }
 });

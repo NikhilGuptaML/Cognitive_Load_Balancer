@@ -1,22 +1,18 @@
 /* This component runs the question-answer loop: fetch a question, collect the learner's response, submit it with latency, show short feedback, and then automatically request the next question. */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 type QuestionResponse = {
   question_id: string;
   question_text: string;
   band: string;
-  options?: Record<string, string>;
-  is_review?: boolean;
-  session_complete?: boolean;
+  hint?: string | null;
 };
 
 type FeedbackState = {
   correct: boolean;
   score: number;
   explanation: string;
-  next_review_in_days?: number;
 } | null;
 
 const BAND_BADGES: Record<string, string> = {
@@ -34,21 +30,16 @@ function FeedbackModal({ feedback }: { feedback: NonNullable<FeedbackState> }) {
         <p className="text-sm uppercase tracking-[0.24em] text-slate-300">Feedback</p>
         <h4 className="mt-3 text-3xl font-semibold">{feedback.correct ? 'Correct' : feedback.score >= 50 ? 'Partial' : 'Incorrect'}</h4>
         <p className="mt-2 text-lg text-slate-200">Score: {Math.round(feedback.score)}</p>
-        {feedback.next_review_in_days != null && (
-          <p className="mt-2 text-sm text-slate-400">
-            Next review in {feedback.next_review_in_days} day{feedback.next_review_in_days > 1 ? 's' : ''}
-          </p>
-        )}
         <p className="mt-4 text-sm leading-6 text-slate-300">{feedback.explanation}</p>
       </div>
     </div>
   );
 }
 
-export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: string; onCorrect?: () => void; onIncorrect?: () => void }) {
-  const navigate = useNavigate();
+export function QuizPanel({ sessionId }: { sessionId: string }) {
   const [question, setQuestion] = useState<QuestionResponse | null>(null);
   const [answer, setAnswer] = useState('');
+  const [showHint, setShowHint] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -62,13 +53,9 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
         throw new Error('Question request failed');
       }
       const payload = (await response.json()) as QuestionResponse;
-      // FIXED: Handle session_complete signal — navigate to report page.
-      if (payload.session_complete) {
-        navigate(`/report/${sessionId}`);
-        return;
-      }
       setQuestion(payload);
       setAnswer('');
+      setShowHint(false);
       setError(null);
       appearedAtRef.current = Date.now();
     } catch {
@@ -90,8 +77,6 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
     }
     const timer = window.setTimeout(() => {
       setFeedback(null);
-      setQuestion(null);
-      setAnswer('');
       void fetchQuestion();
     }, 3000);
     return () => window.clearTimeout(timer);
@@ -123,11 +108,6 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
 
       const payload = await response.json();
       setFeedback(payload);
-      if (payload.correct) {
-        onCorrect?.();
-      } else {
-        onIncorrect?.();
-      }
       setError(null);
     } catch {
       // FIXED: Provide actionable feedback when answer submission fails.
@@ -144,12 +124,7 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-slate-500">Adaptive Quiz</p>
           <h3 className="mt-2 text-2xl font-semibold text-slate-900">Current Prompt</h3>
         </div>
-        <div className="flex items-center gap-2">
-          {question?.is_review && (
-            <span className="rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">Review</span>
-          )}
-          {question ? <span className={`rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`}>{question.band}</span> : null}
-        </div>
+        {question ? <span className={`rounded-full px-4 py-2 text-sm font-semibold ${badgeClass}`}>{question.band}</span> : null}
       </div>
 
       <div className="mt-6 rounded-[1.75rem] bg-white/70 p-5">
@@ -157,30 +132,26 @@ export function QuizPanel({ sessionId, onCorrect, onIncorrect }: { sessionId: st
           {isLoading && !question ? 'Generating a local question...' : question?.question_text ?? 'No question loaded yet.'}
         </p>
         {error ? <p className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">{error}</p> : null}
-        {question?.options && (
-          <div className="mt-5 flex flex-col gap-2">
-            {Object.entries(question.options).map(([letter, text]) => (
-              <div
-                key={letter}
-                className="flex items-start gap-3 rounded-xl bg-slate-50 p-3 shadow-sm text-left select-none opacity-90"
-              >
-                <span className="font-bold text-indigo-600">{letter}:</span>
-                <span className="text-slate-800">{text}</span>
-              </div>
-            ))}
-            <p className="mt-1 text-xs font-medium text-indigo-500 italic">Type the full answer text, not the letter</p>
+        {question?.hint ? (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={() => setShowHint((current) => !current)}
+              className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              {showHint ? 'Hide Hint' : 'Show Hint'}
+            </button>
+            {showHint ? <p className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">{question.hint}</p> : null}
           </div>
-        )}
+        ) : null}
       </div>
 
-      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your Answer</label>
-      <input
-        type="text"
+      <label className="mt-6 block text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">Your answer</label>
+      <textarea
         value={answer}
         onChange={(event) => setAnswer(event.target.value)}
-        placeholder="Type the full answer text..."
-        className="mt-3 w-full rounded-2xl border border-slate-300 bg-white p-4 text-lg font-medium text-slate-900 outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
-        onKeyDown={(e) => { if (e.key === 'Enter' && answer.trim()) void submitAnswer(); }}
+        placeholder="Type your answer here. Typing rhythm is part of the local load estimate."
+        className="mt-3 min-h-40 w-full rounded-[1.75rem] border border-white/50 bg-white/85 p-5 text-base leading-7 text-slate-900 outline-none transition focus:border-amber-400"
       />
       <div className="mt-4 flex justify-end">
         <button

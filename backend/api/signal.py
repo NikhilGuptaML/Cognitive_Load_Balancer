@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from core.load_aggregator import load_aggregator
 from db.database import get_db
-from db.models import BandChange, LoadEvent, Session as StudySession
+from db.models import BandChange, LoadEvent, ResearchParticipant, Session as StudySession
 
 
 router = APIRouter(prefix="/signal", tags=["signal"])
@@ -43,8 +43,14 @@ def _persist_snapshot(db: Session, session_id: str, payload: dict, reason: str) 
     )
     previous_band = previous_event.band if previous_event else None
 
+    # Look up the currently active research participant (if any)
+    active_participant = db.scalar(
+        select(ResearchParticipant).where(ResearchParticipant.is_active.is_(True)).limit(1)
+    )
+
     event = LoadEvent(
         session_id=session_id,
+        participant_id=active_participant.id if active_participant else None,
         timestamp=datetime.utcnow(),
         keystroke_score=payload["subscores"]["keystroke"],
         face_score=payload["subscores"]["facial"],

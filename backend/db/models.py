@@ -46,6 +46,7 @@ class LoadEvent(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String, ForeignKey("sessions.id"), nullable=False, index=True)
+    participant_id = Column(Integer, ForeignKey("research_participants.id"), nullable=True, index=True)
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     keystroke_score = Column(Float, nullable=True)
     face_score = Column(Float, nullable=True)
@@ -55,6 +56,7 @@ class LoadEvent(Base):
     signals_active = Column(JSON, nullable=False, default=list)
 
     session = relationship("Session", back_populates="load_events")
+    participant = relationship("ResearchParticipant", back_populates="load_events")
 
 
 class Question(Base):
@@ -110,3 +112,15 @@ class BandChange(Base):
     reason = Column(String, nullable=False)
 
     session = relationship("Session", back_populates="band_changes")
+
+
+class ResearchParticipant(Base):
+    __tablename__ = "research_participants"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    label = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    is_active = Column(Boolean, default=False, nullable=False)
+    notes = Column(String, nullable=True)
+
+    load_events = relationship("LoadEvent", back_populates="participant")

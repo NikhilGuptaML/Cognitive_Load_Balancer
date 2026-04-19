@@ -1,7 +1,7 @@
 /* This page handles document upload and session creation. Detects re-uploads and surfaces overdue questions. */
 
 import { FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 type OverdueQuestion = {
   question_id: string;
@@ -277,6 +277,22 @@ export function SetupPage() {
             </button>
           </form>
         </section>
+      </div>
+
+      {/* Research dashboard nav links */}
+      <div className="mx-auto mt-10 flex max-w-6xl flex-wrap justify-center gap-4">
+        <Link
+          to="/simulations"
+          className="rounded-full bg-white/70 px-6 py-3 text-sm font-semibold text-slate-700 shadow-panel transition hover:bg-white hover:text-slate-900"
+        >
+          📊 View Simulation Results
+        </Link>
+        <Link
+          to="/participants"
+          className="rounded-full bg-white/70 px-6 py-3 text-sm font-semibold text-slate-700 shadow-panel transition hover:bg-white hover:text-slate-900"
+        >
+          👥 Manage Research Participants
+        </Link>
       </div>
     </div>
   );
